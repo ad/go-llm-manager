@@ -63,7 +63,7 @@ func Load(args []string) *Config {
 		},
 		Database: DatabaseConfig{
 			Path:           getEnv("DB_PATH", "./data/llm-proxy.db"),
-			MigrationsPath: getEnv("DB_MIGRATIONS_PATH", "./migrations"),
+			MigrationsPath: getEnv("MIGRATIONS_PATH", "./migrations"),
 		},
 		Auth: AuthConfig{
 			JWTSecret:      getEnv("JWT_SECRET", "dev-secret-key"),

@@ -1,5 +1,5 @@
 {
-  "version": "0.0.2",
+  "version": "0.0.3",
   "name": "go-llm-manager",
   "slug": "go-llm-manager",
   "description": "",
@@ -16,7 +16,7 @@
     },
     "DATABASE": {
       "DB_PATH": "/config/go-llm-manager.db",
-      "DB_MIGRATIONS_PATH": "/config/migrations"
+      "MIGRATIONS_PATH": "/config/migrations"
     },
     "AUTH": {
       "JWT_SECRET": "your_jwt_secret",
@@ -28,7 +28,8 @@
     },
     "CLEANUP": {
       "CLEANUP_ENABLED": true,
-      "CLEANUP_DAYS": 7
+      "CLEANUP_DAYS": 7,
+      "TASK_TIMEOUT_MINUTES": 5
     },
     "SSE": {
       "HEARTBEAT_INTERVAL": 30,
