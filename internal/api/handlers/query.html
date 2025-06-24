@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>SSE Polling Query Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; background: #f7f7f7; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; padding: 32px 24px; }
+        h2, h3 { margin-top: 0; }
+        .form-row { display: flex; gap: 10px; margin-bottom: 16px; }
+        input, select { flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
+        button { padding: 8px 18px; border: none; border-radius: 4px; margin-right: 8px; cursor: pointer; }
+        .btn-success { background: #27ae60; color: #fff; }
+        .btn-danger { background: #e74c3c; color: #fff; }
+        .btn-warning { background: #f39c12; color: #fff; }
+        .result { margin-top: 18px; padding: 12px; border-radius: 4px; background: #f8f9fa; min-height: 32px; font-family: monospace; }
+        .status { font-weight: bold; }
+        .log { font-size: 0.95em; color: #888; margin-top: 18px; background: #f4f4f4; border-radius: 4px; padding: 10px; max-height: 180px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🚀 SSE Polling Query Demo</h2>
+        <p>Демонстрация работы SSE endpoint <code>/api/result-polling</code> с чистым клиентским кодом.</p>
+        <div class="form-row">
+            <input type="text" id="prompt" placeholder="Введите запрос..." value="Напиши короткое стихотворение про кота">
+            <select id="model">
+                <option value="gemma3:1b">Gemma3 1B</option>
+                <option value="llama3.2:1b">llama3.2:1b</option>
+                <option value="llama3.2:3b">llama3.2:3b</option>
+                <option value="qwen2.5:1.5b">qwen2.5:1.5b</option>
+            </select>
+        </div>
+        <div style="margin: 15px 0;">
+            <button id="startBtn" class="btn-success">🚀 Запустить SSE</button>
+            <button id="stopBtn" class="btn-danger" disabled>⏹️ Остановить SSE</button>
+            <button id="clearBtn" class="btn-warning">🗑️ Очистить</button>
+        </div>
+        <div id="status" class="result"></div>
+        <div id="result" class="result"></div>
+        <div id="log" class="log"></div>
+    </div>
+    <script>
+        let sse = null;
+        let taskToken = null;
+        let taskFinalized = false;
+
+        function log(msg) {
+            const logDiv = document.getElementById('log');
+            logDiv.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function setStatus(msg) {
+            document.getElementById('status').textContent = msg;
+        }
+        function setResult(msg) {
+            document.getElementById('result').textContent = msg;
+        }
+        function clearAll() {
+            setStatus('');
+            setResult('');
+            document.getElementById('log').innerHTML = '';
+            taskFinalized = false;
+            if (sse) { sse.close(); sse = null; }
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('startBtn').disabled = false;
+        }
+
+        document.getElementById('clearBtn').onclick = clearAll;
+
+        document.getElementById('startBtn').onclick = async function() {
+            clearAll();
+            setStatus('⏳ Создание задачи...');
+            document.getElementById('startBtn').disabled = true;
+            const prompt = document.getElementById('prompt').value;
+            const model = document.getElementById('model').value;
+            try {
+                // 1. Получаем JWT через /api/internal/generate-token
+                const tokenResp = await fetch('/api/internal/generate-token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer dev-internal-key'
+                    },
+                    body: JSON.stringify({
+                        user_id: 'sse_demo_' + Date.now(),
+                        product_data: 'Васька',
+                        ollama_params: { model, prompt }
+                    })
+                });
+                if (!tokenResp.ok) throw new Error('Ошибка генерации токена');
+                const tokenData = await tokenResp.json();
+                if (!tokenData.success) throw new Error(tokenData.error || 'Ошибка токена');
+                taskToken = tokenData.token;
+                log('✅ JWT получен');
+                // 2. Создаем задачу
+                const createResp = await fetch('/api/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + taskToken }
+                });
+                if (!createResp.ok) throw new Error('Ошибка создания задачи');
+                const createData = await createResp.json();
+                if (!createData.success) throw new Error(createData.error || 'Ошибка создания задачи');
+                log('✅ Задача создана: ' + createData.taskId);
+                setStatus('🔄 Ожидание SSE...');
+                // 3. Запускаем SSE
+                startSSE(createData.token);
+                document.getElementById('stopBtn').disabled = false;
+            } catch (e) {
+                setStatus('❌ ' + e.message);
+                log('❌ ' + e.message);
+                document.getElementById('startBtn').disabled = false;
+            }
+        };
+
+        document.getElementById('stopBtn').onclick = function() {
+            if (sse) sse.close();
+            setStatus('⏹️ SSE остановлен');
+            log('⏹️ SSE соединение закрыто пользователем');
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('startBtn').disabled = false;
+        };
+
+        function startSSE(token) {
+            if (sse) sse.close();
+            sse = new EventSource('/api/result-polling?token=' + encodeURIComponent(token));
+            setStatus('📡 Ожидание событий SSE...');
+            log('📡 Открыто SSE соединение');
+            sse.onopen = () => log('✅ SSE соединение установлено');
+            sse.onmessage = (event) => {
+                log('➡️ Получено событие: ' + event.data);
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'heartbeat') {
+                        setStatus('💓 Heartbeat: ' + (data.data.message || '')); 
+                    } else if (data.type === 'task_status') {
+                        setStatus('📊 Статус: ' + data.data.status);
+                        setResult('⏳ ' + JSON.stringify(data.data, null, 2));
+                    } else if (data.type === 'task_completed') {
+                        setStatus('✅ Задача завершена');
+                        setResult('🎉 ' + JSON.stringify(data.data, null, 2));
+                        taskFinalized = true;
+                        sse.close();
+                        document.getElementById('stopBtn').disabled = true;
+                        document.getElementById('startBtn').disabled = false;
+                    } else if (data.type === 'task_failed') {
+                        setStatus('❌ Задача провалена');
+                        setResult('❌ ' + JSON.stringify(data.data, null, 2));
+                        taskFinalized = true;
+                        sse.close();
+                        document.getElementById('stopBtn').disabled = true;
+                        document.getElementById('startBtn').disabled = false;
+                    } else if (data.type === 'error') {
+                        setStatus('❌ SSE ошибка: ' + (data.data.error || ''));
+                        log('❌ SSE ошибка: ' + (data.data.error || ''));
+                    } else {
+                        setStatus('📝 Неизвестное событие: ' + data.type);
+                        setResult(JSON.stringify(data, null, 2));
+                    }
+                } catch (err) {
+                    setStatus('❌ Ошибка парсинга SSE: ' + err.message);
+                    log('❌ Ошибка парсинга: ' + err.message);
+                }
+            };
+            sse.onerror = (event) => {
+                log('❌ SSE ошибка соединения');
+                console.error('SSE error:', event);
+                if (!taskFinalized) setStatus('❌ SSE ошибка соединения');
+            };
+        }
+    </script>
+</body>
+</html>
