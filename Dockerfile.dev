@@ -22,6 +22,8 @@ RUN go mod download
 # Copy source code
 COPY . .
 
+ENV BUILD_VERSION=dev2
+
 # Create data directory
 RUN mkdir -p /data
 

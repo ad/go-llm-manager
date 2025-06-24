@@ -1,8 +1,10 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // CORS middleware
@@ -26,9 +28,55 @@ func CORS(next http.Handler) http.Handler {
 // Logging middleware
 func Logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// TODO: Add structured logging
-		next.ServeHTTP(w, r)
+		start := time.Now()
+
+		// Подсчет длины заголовков
+		headersLen := 0
+		for k, v := range r.Header {
+			headersLen += len(k)
+			for _, vv := range v {
+				headersLen += len(vv)
+			}
+		}
+
+		// Подсчет длины тела
+		var bodyLen int
+		if r.ContentLength > 0 {
+			bodyLen = int(r.ContentLength)
+		} else {
+			// Если ContentLength неизвестен, читаем body вручную (но не изменяем r.Body для хендлеров)
+			// Можно реализовать через io.TeeReader, если нужно точное значение
+		}
+
+		// Обертка для захвата кода ответа
+		rw := &loggingResponseWriter{ResponseWriter: w, statusCode: 200}
+		next.ServeHTTP(rw, r)
+		duration := time.Since(start)
+		// ua := r.Header.Get("User-Agent")
+		ip := r.RemoteAddr
+		if ipHeader := r.Header.Get("X-Real-IP"); ipHeader != "" {
+			ip = ipHeader
+		} else if ipHeader := r.Header.Get("X-Forwarded-For"); ipHeader != "" {
+			ip = ipHeader
+		}
+		logLine := fmt.Sprintf("[REQ] %s %s from %s | %v | code=%d | headers=%dB | body=%dB", r.Method, r.URL.Path, ip, duration, rw.statusCode, headersLen, bodyLen)
+		println(logLine)
 	})
+}
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	statusCode        int
+	writeHeaderCalled bool
+}
+
+func (lrw *loggingResponseWriter) WriteHeader(code int) {
+	if lrw.writeHeaderCalled {
+		return
+	}
+	lrw.statusCode = code
+	lrw.writeHeaderCalled = true
+	lrw.ResponseWriter.WriteHeader(code)
 }
 
 // Content type middleware

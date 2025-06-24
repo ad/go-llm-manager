@@ -24,3 +24,4 @@ go.work
 .env
 config.db
 /data/
+tmp/main

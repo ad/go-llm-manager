@@ -641,6 +641,7 @@ func (h *InternalHandlers) Cleanup(w http.ResponseWriter, r *http.Request) {
 
 	stats, cleaned, err := h.performCleanup()
 	if err != nil {
+		log.Printf("[CLEANUP ERROR] %v", err)
 		utils.SendError(w, http.StatusInternalServerError, "Cleanup failed")
 		return
 	}
@@ -752,12 +753,12 @@ func (h *InternalHandlers) getCleanupStats() (map[string]interface{}, error) {
 	taskStatsQuery := `
 		SELECT 
 			COUNT(*) as total_tasks,
-			SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_tasks,
-			SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing_tasks,
-			SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_tasks,
-			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_tasks,
-			SUM(CASE WHEN status IN ('completed', 'failed') AND completed_at < ? THEN 1 ELSE 0 END) as tasks_older_than_7_days,
-			SUM(CASE WHEN status = 'processing' AND heartbeat_at < ? THEN 1 ELSE 0 END) as timedout_tasks
+			COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending_tasks,
+			COALESCE(SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END), 0) as processing_tasks,
+			COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed_tasks,
+			COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed_tasks,
+			COALESCE(SUM(CASE WHEN status IN ('completed', 'failed') AND completed_at < ? THEN 1 ELSE 0 END), 0) as tasks_older_than_7_days,
+			COALESCE(SUM(CASE WHEN status = 'processing' AND heartbeat_at < ? THEN 1 ELSE 0 END), 0) as timedout_tasks
 		FROM tasks
 	`
 

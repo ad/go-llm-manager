@@ -50,43 +50,51 @@ func main() {
 	// Public endpoints (with CORS)
 	mux.Handle("/", middleware.Chain(
 		http.HandlerFunc(publicHandlers.HealthCheck),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
 
 	mux.Handle("/health", middleware.Chain(
 		http.HandlerFunc(publicHandlers.Health),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
 
 	mux.Handle("/admin", middleware.Chain(
 		http.HandlerFunc(publicHandlers.Admin),
+		middleware.Logging,
 		middleware.CORS,
 	))
 	mux.Handle("/admin.js", middleware.Chain(
 		http.HandlerFunc(publicHandlers.AdminJS),
+		middleware.Logging,
 		middleware.CORS,
 	))
 	mux.Handle("/admin.css", middleware.Chain(
 		http.HandlerFunc(publicHandlers.AdminCSS),
+		middleware.Logging,
 		middleware.CORS,
 	))
 
 	mux.Handle("/query", middleware.Chain(
 		http.HandlerFunc(publicHandlers.Query),
+		middleware.Logging,
 		middleware.CORS,
 	))
 
 	// JWT-protected endpoints
 	mux.Handle("/api/create", middleware.Chain(
 		http.HandlerFunc(publicHandlers.CreateTask),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
 
 	mux.Handle("/api/result", middleware.Chain(
 		http.HandlerFunc(publicHandlers.GetResult),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
@@ -94,6 +102,7 @@ func main() {
 	// SSE endpoints
 	mux.Handle("/api/result-polling", middleware.Chain(
 		http.HandlerFunc(sseHandlers.ResultPolling),
+		middleware.Logging,
 		middleware.CORS,
 	))
 
@@ -101,6 +110,7 @@ func main() {
 	mux.Handle("/api/internal/generate-token", middleware.Chain(
 		http.HandlerFunc(internalHandlers.GenerateToken),
 		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
@@ -108,6 +118,7 @@ func main() {
 	mux.Handle("/api/internal/tasks", middleware.Chain(
 		http.HandlerFunc(internalHandlers.GetTasks),
 		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
@@ -115,6 +126,7 @@ func main() {
 	mux.Handle("/api/internal/all-tasks", middleware.Chain(
 		http.HandlerFunc(internalHandlers.GetAllTasks),
 		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
@@ -122,6 +134,7 @@ func main() {
 	mux.Handle("/api/internal/claim", middleware.Chain(
 		http.HandlerFunc(internalHandlers.ClaimTasks),
 		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
@@ -129,6 +142,7 @@ func main() {
 	mux.Handle("/api/internal/heartbeat", middleware.Chain(
 		http.HandlerFunc(internalHandlers.Heartbeat),
 		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
@@ -136,6 +150,7 @@ func main() {
 	mux.Handle("/api/internal/processor-heartbeat", middleware.Chain(
 		http.HandlerFunc(internalHandlers.ProcessorHeartbeat),
 		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
@@ -143,6 +158,7 @@ func main() {
 	mux.Handle("/api/internal/complete", middleware.Chain(
 		http.HandlerFunc(internalHandlers.CompleteTasks),
 		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
@@ -150,6 +166,7 @@ func main() {
 	mux.Handle("/api/internal/cleanup", middleware.Chain(
 		http.HandlerFunc(internalHandlers.Cleanup),
 		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
@@ -157,6 +174,7 @@ func main() {
 	mux.Handle("/api/internal/cleanup/stats", middleware.Chain(
 		http.HandlerFunc(internalHandlers.CleanupStats),
 		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
@@ -164,6 +182,7 @@ func main() {
 	mux.Handle("/api/internal/work-steal", middleware.Chain(
 		http.HandlerFunc(internalHandlers.WorkSteal),
 		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
@@ -171,6 +190,7 @@ func main() {
 	mux.Handle("/api/internal/metrics", middleware.Chain(
 		http.HandlerFunc(internalHandlers.ProcessorMetrics),
 		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
@@ -178,6 +198,7 @@ func main() {
 	mux.Handle("/api/internal/estimated-time", middleware.Chain(
 		http.HandlerFunc(internalHandlers.EstimatedTime),
 		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
 	))
@@ -185,6 +206,7 @@ func main() {
 	mux.Handle("/api/internal/task-stream", middleware.Chain(
 		http.HandlerFunc(sseHandlers.TaskStream),
 		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
 		middleware.CORS,
 	))
 
