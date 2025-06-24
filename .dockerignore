@@ -20,7 +20,6 @@ vendor/
 go.work
 
 # Development files
-.air.toml
 tmp/
 build-errors.log
 

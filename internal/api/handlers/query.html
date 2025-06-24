@@ -22,6 +22,7 @@
 <body>
     <div class="container">
         <h2>🚀 SSE Polling Query Demo</h2>
+        <input type="text" id="apiKey" value="dev-internal-key">
         <p>Демонстрация работы SSE endpoint <code>/api/result-polling</code> с чистым клиентским кодом.</p>
         <div class="form-row">
             <input type="text" id="prompt" placeholder="Введите запрос..." value="Напиши короткое стихотворение про кота">
@@ -82,7 +83,7 @@
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': 'Bearer dev-internal-key'
+                        'Authorization': 'Bearer ' + document.getElementById('apiKey').value
                     },
                     body: JSON.stringify({
                         user_id: 'sse_demo_' + Date.now(),

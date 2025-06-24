@@ -1,6 +1,7 @@
 services:
-  go-worker-dev:
-    image: danielapatin/go-llm-manager:latest
+  worker-dev:
+    build: 
+      dockerfile: Dockerfile.dev
     ports:
       - "8080:8080"
     environment:
@@ -12,12 +13,12 @@ services:
       - RATE_LIMIT_REQUESTS=1000
       - RATE_LIMIT_WINDOW=60
     volumes:
-      - go_worker_dev_data:/data
+      - worker_dev_data:/data
     networks:
       - llm-proxy-network
 
 volumes:
-  go_worker_dev_data:
+  worker_dev_data:
 
 networks:
   llm-proxy-network:

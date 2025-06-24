@@ -8,6 +8,16 @@ REPO=danielapatin/go-llm-manager
 build:
 	@BUILD_VERSION=$(BUILD_VERSION) KO_DOCKER_REPO=$(REPO) ko build ./cmd/server --bare --local --sbom=none --tags="$(BUILD_VERSION),latest"
 
+dev: dev-worker
+
+dev-processor: ## Start only Go processor dev
+	docker compose build processor-dev
+	docker-compose up -d processor-dev
+
+dev-worker: ## Start only Go worker dev server
+	docker compose build worker-dev
+	docker-compose up -d worker-dev
+
 publish:
 	@BUILD_VERSION=$(BUILD_VERSION) KO_DOCKER_REPO=$(REPO) ko publish ./cmd/server --bare --sbom=none --tags="$(BUILD_VERSION),latest"
 
