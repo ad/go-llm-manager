@@ -13,6 +13,7 @@ services:
       - RATE_LIMIT_REQUESTS=1000
       - RATE_LIMIT_WINDOW=60
     volumes:
+      - .:/app
       - worker_dev_data:/data
     networks:
       - llm-proxy-network

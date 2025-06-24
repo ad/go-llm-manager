@@ -60,8 +60,16 @@ func main() {
 		middleware.ContentType,
 	))
 
-	mux.Handle("/example", middleware.Chain(
-		http.HandlerFunc(publicHandlers.Example),
+	mux.Handle("/admin", middleware.Chain(
+		http.HandlerFunc(publicHandlers.Admin),
+		middleware.CORS,
+	))
+	mux.Handle("/admin.js", middleware.Chain(
+		http.HandlerFunc(publicHandlers.AdminJS),
+		middleware.CORS,
+	))
+	mux.Handle("/admin.css", middleware.Chain(
+		http.HandlerFunc(publicHandlers.AdminCSS),
 		middleware.CORS,
 	))
 

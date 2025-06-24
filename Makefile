@@ -17,6 +17,7 @@ dev-processor: ## Start only Go processor dev
 dev-worker: ## Start only Go worker dev server
 	docker compose build worker-dev
 	docker-compose up -d worker-dev
+	docker compose logs worker-dev -f 
 
 publish:
 	@BUILD_VERSION=$(BUILD_VERSION) KO_DOCKER_REPO=$(REPO) ko publish ./cmd/server --bare --sbom=none --tags="$(BUILD_VERSION),latest"

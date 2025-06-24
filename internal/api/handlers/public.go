@@ -28,7 +28,6 @@ func (h *PublicHandlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	data := map[string]interface{}{
 		"message": "LLM Proxy API v1.0",
 		"endpoints": map[string]interface{}{
-			"example": "/example - Frontend integration example",
 			"api": map[string]string{
 				"create":   "/api/create - Create task (JWT)",
 				"result":   "/api/result - Get result (JWT)",
@@ -211,11 +210,25 @@ func (h *PublicHandlers) GetResult(w http.ResponseWriter, r *http.Request) {
 	utils.SendJSON(w, http.StatusOK, data)
 }
 
-// GET /example - HTML example page
-func (h *PublicHandlers) Example(w http.ResponseWriter, r *http.Request) {
+// GET /admin - HTML admin page
+func (h *PublicHandlers) Admin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(ExampleHTML))
+	w.Write([]byte(AdminHTML))
+}
+
+// GET /admin.js - JavaScript for admin page
+func (h *PublicHandlers) AdminJS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(AdminJS))
+}
+
+// GET /admin.css - CSS for admin page
+func (h *PublicHandlers) AdminCSS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(AdminCSS))
 }
 
 // GET /query - чистый SSE Polling Demo
