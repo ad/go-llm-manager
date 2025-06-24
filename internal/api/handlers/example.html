@@ -2350,7 +2350,7 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': 'Bearer dev-internal-key'
+                    'Authorization': 'Bearer ' + document.getElementById('apiKey').value
                 },
                 body: JSON.stringify({
                     user_id: 'sse-demo-user',
