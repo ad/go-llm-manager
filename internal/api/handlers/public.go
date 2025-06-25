@@ -126,8 +126,11 @@ func (h *PublicHandlers) CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Calculate estimated wait time (human-readable format like TypeScript)
-	estimatedTime := "10-15 minutes (no active processors)" // TODO: implement proper calculateEstimatedWaitTime based on queue and processors
-
+	estimatedTime, err := calculateEstimatedWaitTime(h.db)
+	if err != nil {
+		utils.SendError(w, http.StatusInternalServerError, "Failed to calculate estimated time")
+		return
+	}
 	// Generate result token for this specific task (matching TypeScript structure)
 	resultPayload := &database.JWTPayload{
 		Issuer:   "llm-proxy",

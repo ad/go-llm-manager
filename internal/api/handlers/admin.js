@@ -164,16 +164,6 @@ async function runMagic() {
             body: JSON.stringify({
                 user_id: userId,
                 product_data: productText,
-                priority: 1, // Высокий приоритет для магии
-                ollama_params: {
-                    model: "gemma3:1b",
-                    temperature: 0.8,
-                    max_tokens: 50,
-                    top_p: 0.9,
-                    top_k: 40,
-                    repeat_penalty: 1.1,
-                    prompt: "Создай краткое (до 30 слов) креативное маркетинговое описание товара с эмоциями: "
-                }
             })
         });
 
@@ -1589,6 +1579,32 @@ function clearSSEPollingDemo() {
     ssePollingTaskCompleted = false;
 }
 
+function estimateTime() {
+    const baseUrl = document.getElementById('baseUrl').value;
+    const apiKey = document.getElementById('apiKey').value;
+    const resultDiv = document.getElementById('estimateTimeResult');
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '⏳ Запрос...';
+    fetch(`${baseUrl}/api/internal/estimated-time`, {
+        method: 'GET',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+        },
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            resultDiv.innerHTML = `<strong>Оценка времени:</strong> ${data.estimated_time || data.estimatedTime || '???'}`;
+        } else {
+            resultDiv.innerHTML = `<span style='color:#e74c3c;'>Ошибка: ${data.error || 'Не удалось получить оценку'}</span>`;
+        }
+    })
+    .catch(e => {
+        resultDiv.innerHTML = `<span style='color:#e74c3c;'>Ошибка: ${e.message}</span>`;
+    });
+}
+
 
 // ===== Internal API Key Cookie Logic =====
 function setCookie(name, value, days) {
@@ -1664,3 +1680,4 @@ window.logoutApiKey = function() {
     if (document.getElementById('main-content')) document.getElementById('main-content').style.display = 'none';
     if (document.getElementById('login-modal')) document.getElementById('login-modal').style.display = '';
 };
+
