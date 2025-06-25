@@ -1220,68 +1220,6 @@ function stopMetricsPolling() {
     }
 }
 
-async function getSystemInfo() {
-    try {
-        const baseUrl = document.getElementById('baseUrl').value;
-        
-        log('ℹ️ Получение информации о системе...');
-
-        const response = await fetch(`${baseUrl}/`);
-        const data = await response.json();
-        
-        const systemInfo = {
-            api_version: data.message,
-            endpoints: data.endpoints,
-            timestamp: new Date().toISOString(),
-            browser: navigator.userAgent,
-            connection_status: 'Connected'
-        };
-        
-        document.getElementById('systemInfo').innerHTML = `
-            <h4>ℹ️ Информация о системе</h4>
-            <div class="json-viewer">${JSON.stringify(systemInfo, null, 2)}</div>
-        `;
-        document.getElementById('systemInfo').style.display = 'block';
-        
-        log('✅ Информация о системе получена', 'success');
-        
-    } catch (error) {
-        log(`❌ Ошибка получения информации: ${error.message}`, 'error');
-    }
-}
-
-async function testAllEndpoints() {
-    const baseUrl = document.getElementById('baseUrl').value;
-    const apiKey = document.getElementById('apiKey').value;
-    
-    log('🧪 Начало тестирования всех эндпойнтов...');
-    
-    const endpoints = [
-        { url: '/', method: 'GET', auth: false, name: 'Главная страница' },
-        { url: '/api/internal/metrics', method: 'GET', auth: true, name: 'Метрики' },
-        { url: '/api/internal/tasks', method: 'GET', auth: true, name: 'Ожидающие задачи' },
-        { url: '/api/internal/all-tasks', method: 'GET', auth: true, name: 'Все задачи' }
-    ];
-    
-    for (const endpoint of endpoints) {
-        try {
-            const headers = endpoint.auth ? { 'Authorization': `Bearer ${apiKey}` } : {};
-            const response = await fetch(`${baseUrl}${endpoint.url}`, {
-                method: endpoint.method,
-                                        headers
-            });
-            
-            const status = response.ok ? '✅' : '❌';
-            log(`${status} ${endpoint.name}: HTTP ${response.status}`);
-            
-        } catch (error) {
-            log(`❌ ${endpoint.name}: ${error.message}`, 'error');
-        }
-    }
-    
-    log('🧪 Тестирование эндпойнтов завершено');
-}
-
 function exportLogs() {
     const logs = document.getElementById('logs').innerText;
     const blob = new Blob([logs], { type: 'text/plain' });
@@ -1461,171 +1399,6 @@ function startMagicSSEPolling(resultToken, magicInput, wrapper, restoreMagicInte
         log('❌ Ошибка в магическом Real-time поллинге: ' + error.message, 'error');
         restoreMagicInterface('❌ ' + error.message);
     }
-}
-
-// SSE Functions
-async function testSSEConnection() {
-    const results = document.getElementById('sseResults');
-    results.style.display = 'block';
-    results.innerHTML = '<div class="loading">🔌 Тестирование SSE соединения...</div>';
-    
-    try {
-        // Получаем JWT токен для процессора
-        const tokenResponse = await fetch('/api/internal/generate-token', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + document.getElementById('apiKey').value
-            },
-            body: JSON.stringify({
-                processor_id: 'admin-test-sse',
-                duration_hours: 1
-            })
-        });
-        
-        const tokenData = await tokenResponse.json();
-        if (!tokenData.success) {
-            throw new Error('Не удалось получить JWT токен: ' + tokenData.error);
-        }
-        
-        // Тестируем SSE соединение (токен передаём в URL, т.к. EventSource не поддерживает кастомные заголовки)
-        const sseUrl = '/api/internal/task-stream?heartbeat=5000&maxDuration=30000&token=' + encodeURIComponent(tokenData.token);
-        const eventSource = new EventSource(sseUrl);
-        
-        let connected = false;
-        let eventsReceived = 0;
-        
-        eventSource.onopen = function() {
-            connected = true;
-            results.innerHTML += '<div class="success">✅ SSE соединение установлено</div>';
-        };
-        
-        eventSource.onmessage = function(event) {
-            eventsReceived++;
-            try {
-                const data = JSON.parse(event.data);
-                results.innerHTML += '<div class="info">📡 SSE событие: ' + data.type + ' (' + eventsReceived + ')</div>';
-            } catch (e) {
-                results.innerHTML += '<div class="warning">⚠️ Получены некорректные SSE данные</div>';
-            }
-        };
-        
-        eventSource.onerror = function() {
-            results.innerHTML += '<div class="error">❌ Ошибка SSE соединения</div>';
-            eventSource.close();
-        };
-        
-        // Закрываем соединение через 30 секунд
-        setTimeout(() => {
-            eventSource.close();
-            results.innerHTML += '<div class="info">🔌 SSE соединение закрыто после теста (' + eventsReceived + ' событий)</div>';
-        }, 30000);
-        
-    } catch (error) {
-        results.innerHTML = '<div class="error">❌ Ошибка теста SSE: ' + error.message + '</div>';
-    }
-}
-
-async function startSSEMonitoring() {
-    const results = document.getElementById('sseMonitoring');
-    const startBtn = document.getElementById('sseMonitoringBtn');
-    const stopBtn = document.getElementById('stopSSEBtn');
-    
-    results.style.display = 'block';
-    results.innerHTML = '<div class="loading">🚀 Запуск мониторинга SSE...</div>';
-    
-    try {
-        // Получаем JWT токен для процессора
-        const tokenResponse = await fetch('/api/internal/generate-token', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + document.getElementById('apiKey').value
-            },
-            body: JSON.stringify({
-                processor_id: 'admin-monitor-sse',
-                duration_hours: 24
-            })
-        });
-        
-        const tokenData = await tokenResponse.json();
-        if (!tokenData.success) {
-            throw new Error('Не удалось получить JWT токен: ' + tokenData.error);
-        }
-        
-        // Начинаем SSE мониторинг (токен передаём в URL, т.к. EventSource не поддерживает кастомные заголовки)
-        const sseUrl = '/api/internal/task-stream?heartbeat=30000&maxDuration=86400000&token=' + encodeURIComponent(tokenData.token);
-        processorSSEConnection = new EventSource(sseUrl);
-        
-        let startTime = Date.now();
-        let eventsCount = 0;
-        
-        processorSSEConnection.onopen = function() {
-            results.innerHTML = '<div class="success">📡 SSE мониторинг активен</div>';
-            startBtn.disabled = true;
-            stopBtn.disabled = false;
-        };
-        
-        processorSSEConnection.onmessage = function(event) {
-            eventsCount++;
-            const uptime = Math.floor((Date.now() - startTime) / 1000);
-            
-            try {
-                const data = JSON.parse(event.data);
-                const timestamp = new Date().toLocaleTimeString();
-                
-                let eventInfo = '';
-                switch(data.type) {
-                    case 'heartbeat':
-                        eventInfo = '💓 Heartbeat от сервера';
-                        break;
-                    case 'task_available':
-                        eventInfo = '🎯 Новая задача: ' + data.taskId + ' (приоритет: ' + data.priority + ')';
-                        break;
-                    case 'processor_metrics':
-                        eventInfo = '📊 Метрики: процессоров=' + data.totalProcessors + ', задач=' + data.activeTasks;
-                        break;
-                    default:
-                        eventInfo = '📝 Событие: ' + data.type;
-                }
-                
-                results.innerHTML = 
-                    '<div class="success">📡 SSE мониторинг активен (' + uptime + 'с, ' + eventsCount + ' событий)</div>' +
-                    '<div class="info">[' + timestamp + '] ' + eventInfo + '</div>' +
-                    results.innerHTML.split('</div>').slice(1).join('</div>').substring(0, 2000);
-                
-            } catch (e) {
-                results.innerHTML = '<div class="warning">⚠️ Некорректные SSE данные</div>' + results.innerHTML;
-            }
-        };
-        
-        processorSSEConnection.onerror = function() {
-            results.innerHTML = '<div class="error">❌ Потеря SSE соединения</div>' + results.innerHTML;
-            startBtn.disabled = false;
-            stopBtn.disabled = true;
-            processorSSEConnection = null;
-        };
-        
-    } catch (error) {
-        results.innerHTML = '<div class="error">❌ Ошибка мониторинга SSE: ' + error.message + '</div>';
-        startBtn.disabled = false;
-        stopBtn.disabled = true;
-    }
-}
-
-function stopSSEMonitoring() {
-    if (processorSSEConnection) {
-        processorSSEConnection.close();
-        processorSSEConnection = null;
-    }
-    
-    const results = document.getElementById('sseMonitoring');
-    const startBtn = document.getElementById('sseMonitoringBtn');
-    const stopBtn = document.getElementById('stopSSEBtn');
-    
-    results.innerHTML = '<div class="info">⏹️ SSE мониторинг остановлен</div>' + results.innerHTML;
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
 }
 
 // === SSE POLLING DEMO FUNCTIONS ===
@@ -1815,3 +1588,79 @@ function clearSSEPollingDemo() {
     document.getElementById('ssePollingPrompt').value = '';
     ssePollingTaskCompleted = false;
 }
+
+
+// ===== Internal API Key Cookie Logic =====
+function setCookie(name, value, days) {
+    let expires = "";
+    if (days) {
+        const date = new Date();
+        date.setTime(date.getTime() + (days*24*60*60*1000));
+        expires = "; expires=" + date.toUTCString();
+    }
+    document.cookie = name + "=" + (value || "")  + expires + "; path=/";
+}
+function getCookie(name) {
+    const nameEQ = name + "=";
+    const ca = document.cookie.split(';');
+    for(let i=0;i < ca.length;i++) {
+        let c = ca[i];
+        while (c.charAt(0)==' ') c = c.substring(1,c.length);
+        if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length,c.length);
+    }
+    return null;
+}
+function eraseCookie(name) {   
+    document.cookie = name+'=; Max-Age=-99999999; path=/';  
+}
+
+function showLogin() {
+    document.getElementById('login-modal').style.display = '';
+    document.getElementById('main-content').style.display = 'none';
+}
+function showMain() {
+    document.getElementById('login-modal').style.display = 'none';
+    document.getElementById('main-content').style.display = '';
+    document.getElementById('logoutBtn').style.display = '';
+}
+function loginWithApiKey() {
+    const key = document.getElementById('loginApiKey').value.trim();
+    if (!key) {
+        document.getElementById('loginError').textContent = 'Введите Internal API Key';
+        return;
+    }
+    setCookie('internal_api_key', key, 30);
+    document.getElementById('apiKey').value = key;
+    document.getElementById('loginError').textContent = '';
+    showMain();
+}
+function logoutApiKey() {
+    eraseCookie('internal_api_key');
+    showLogin();
+    log('🔑 Вы вышли из системы', 'info');
+}
+
+// При старте страницы — если есть ключ в cookie, подставить его в #apiKey
+window.addEventListener('DOMContentLoaded', function() {
+    const savedKey = getCookie('internal_api_key');
+    if (savedKey) {
+        const apiKeyInput = document.getElementById('apiKey');
+        if (apiKeyInput) {
+            apiKeyInput.value = savedKey;
+            showMain();
+        } else {
+            showLogin();
+        }
+    } else {
+        showLogin();
+    }
+});
+// При выходе — очищать поле и cookie
+window.logoutApiKey = function() {
+    eraseCookie('internal_api_key');
+    const apiKeyInput = document.getElementById('apiKey');
+    if (apiKeyInput) apiKeyInput.value = '';
+    // Скрыть основной интерфейс, показать окно входа
+    if (document.getElementById('main-content')) document.getElementById('main-content').style.display = 'none';
+    if (document.getElementById('login-modal')) document.getElementById('login-modal').style.display = '';
+};
