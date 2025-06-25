@@ -131,6 +131,10 @@ func (c *Client) SendEvent(event SSEEvent) error {
 		return fmt.Errorf("client connection closed")
 	}
 
+	if event.Type == "" {
+		return fmt.Errorf("SSE event with empty type is not allowed")
+	}
+
 	// Format SSE event
 	eventData, err := json.Marshal(event)
 	if err != nil {

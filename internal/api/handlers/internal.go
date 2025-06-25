@@ -499,7 +499,7 @@ func (h *InternalHandlers) ProcessorHeartbeat(w http.ResponseWriter, r *http.Req
 	countQuery := `SELECT COUNT(*) FROM tasks WHERE processor_id = ? AND status = 'processing'`
 	err := h.db.QueryRow(countQuery, req.ProcessorID).Scan(&activeTasksCount)
 	if err != nil {
-		log.Printf("Error counting active tasks: %v", err)
+		log.Printf("Error counting active tasks: %v\n", err)
 		activeTasksCount = 0
 	}
 
@@ -641,7 +641,7 @@ func (h *InternalHandlers) Cleanup(w http.ResponseWriter, r *http.Request) {
 
 	stats, cleaned, err := h.performCleanup()
 	if err != nil {
-		log.Printf("[CLEANUP ERROR] %v", err)
+		log.Printf("[CLEANUP ERROR] %v\n", err)
 		utils.SendError(w, http.StatusInternalServerError, "Cleanup failed")
 		return
 	}
@@ -713,13 +713,13 @@ func (h *InternalHandlers) performCleanup() (map[string]interface{}, map[string]
 				continue
 			}
 			if retryCount+1 < maxRetries {
-				log.Printf("[CLEANUP DEBUG] RequeueTask params: id=%s processorID=%s", id, processorID)
+				log.Printf("[CLEANUP DEBUG] RequeueTask params: id=%s processorID=%s\n", id, processorID)
 				err := h.db.RequeueTask(id, processorID, func() *string { s := "manager: heartbeat timeout"; return &s }())
 				if err == nil {
 					requeuedTasks++
-					log.Printf("[CLEANUP] Task %s requeued (timeout, retry %d/%d)", id, retryCount+1, maxRetries)
+					log.Printf("[CLEANUP] Task %s requeued (timeout, retry %d/%d)\n", id, retryCount+1, maxRetries)
 				} else {
-					log.Printf("[CLEANUP ERROR] RequeueTask failed: %v", err)
+					log.Printf("[CLEANUP ERROR] RequeueTask failed: %v\n", err)
 				}
 			} else {
 				failQuery := `
@@ -729,7 +729,7 @@ func (h *InternalHandlers) performCleanup() (map[string]interface{}, map[string]
 				_, err := h.db.Exec(failQuery, "Task failed: heartbeat timeout, max retries reached", now, now, id)
 				if err == nil {
 					failedTasks++
-					log.Printf("[CLEANUP] Task %s failed (timeout, max retries)", id)
+					log.Printf("[CLEANUP] Task %s failed (timeout, max retries)\n", id)
 				}
 			}
 		}
@@ -1071,7 +1071,7 @@ func (h *InternalHandlers) RequeueTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Task %s requeued by processor %s with reason: %v", req.TaskID, req.ProcessorID, req.Reason)
+	log.Printf("Task %s requeued by processor %s with reason: %v\n", req.TaskID, req.ProcessorID, req.Reason)
 
 	utils.SendJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }

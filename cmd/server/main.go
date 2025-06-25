@@ -231,7 +231,7 @@ func main() {
 
 	// Start server in goroutine
 	go func() {
-		log.Printf("Starting server v.%s on %s", version, addr)
+		log.Printf("Starting server v.%s on %s\n", version, addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed to start: %v", err)
 		}
@@ -248,7 +248,7 @@ func main() {
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("Server forced to shutdown: %v", err)
+		log.Printf("Server forced to shutdown: %v\n", err)
 	}
 
 	log.Println("Server exited")

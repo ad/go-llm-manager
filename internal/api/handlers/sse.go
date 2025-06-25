@@ -325,6 +325,10 @@ func (h *SSEHandlers) sendImmediateResult(w http.ResponseWriter, task *database.
 		}
 	}
 
+	if eventType == "" {
+		utils.SendError(w, http.StatusInternalServerError, "Internal error: empty SSE event type")
+		return
+	}
 	event := sse.SSEEvent{
 		Type:      eventType,
 		Data:      eventData,

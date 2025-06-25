@@ -122,7 +122,7 @@ func Load(args []string) *Config {
 		}
 	}
 
-	log.Printf("Loaded configuration: %+v", config)
+	log.Printf("Loaded configuration: %+v\n", config)
 
 	return config
 }
