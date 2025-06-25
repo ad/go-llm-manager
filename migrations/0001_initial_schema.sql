@@ -21,7 +21,7 @@ CREATE TABLE tasks (
     timeout_at INTEGER,
     ollama_params TEXT,
     estimated_duration INTEGER DEFAULT 300000, -- 5 minutes default
-    actual_duration INTEGER,
+    actual_duration INTEGER
 );
 
 -- Rate limiting table
