@@ -102,7 +102,7 @@ func main() {
 	// SSE endpoints
 	mux.Handle("/api/result-polling", middleware.Chain(
 		http.HandlerFunc(sseHandlers.ResultPolling),
-		middleware.Logging,
+		// middleware.Logging,
 		middleware.CORS,
 	))
 
@@ -206,7 +206,7 @@ func main() {
 	mux.Handle("/api/internal/task-stream", middleware.Chain(
 		http.HandlerFunc(sseHandlers.TaskStream),
 		requireAPIKey(apiKeyAuth),
-		middleware.Logging,
+		// middleware.Logging,
 		middleware.CORS,
 	))
 
