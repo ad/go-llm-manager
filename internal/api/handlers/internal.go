@@ -691,28 +691,48 @@ func (h *InternalHandlers) performCleanup() (map[string]interface{}, map[string]
 		WHERE (status = 'completed' OR status = 'failed') 
 		AND completed_at < ?
 	`
-
 	taskResult, err := h.db.Exec(cleanTasksQuery, sevenDaysAgo)
 	var cleanedTasks int64 = 0
 	if err == nil {
 		cleanedTasks, _ = taskResult.RowsAffected()
 	}
 
-	// 2. Clean timed out tasks (processing but no heartbeat for 5+ minutes)
-	timeoutQuery := `
-		UPDATE tasks 
-		SET status = 'failed', 
-		    error_message = 'Task timed out - no heartbeat', 
-		    completed_at = ?,
-		    updated_at = ?
-		WHERE status = 'processing' 
-		AND (heartbeat_at < ? OR heartbeat_at IS NULL)
+	// 2. Requeue timed out tasks (processing but no heartbeat for 5+ minutes)
+	timedoutQuery := `
+		SELECT id, processor_id, retry_count, max_retries FROM tasks 
+		WHERE status = 'processing' AND (heartbeat_at < ? OR heartbeat_at IS NULL)
 	`
-
-	timeoutResult, err := h.db.Exec(timeoutQuery, now, now, fiveMinutesAgo)
-	var timedoutTasks int64 = 0
+	rows, err := h.db.Query(timedoutQuery, fiveMinutesAgo)
+	var requeuedTasks, failedTasks int64
 	if err == nil {
-		timedoutTasks, _ = timeoutResult.RowsAffected()
+		defer rows.Close()
+		for rows.Next() {
+			var id, processorID string
+			var retryCount, maxRetries int
+			if err := rows.Scan(&id, &processorID, &retryCount, &maxRetries); err != nil {
+				continue
+			}
+			if retryCount+1 < maxRetries {
+				log.Printf("[CLEANUP DEBUG] RequeueTask params: id=%s processorID=%s", id, processorID)
+				err := h.db.RequeueTask(id, processorID, func() *string { s := "manager: heartbeat timeout"; return &s }())
+				if err == nil {
+					requeuedTasks++
+					log.Printf("[CLEANUP] Task %s requeued (timeout, retry %d/%d)", id, retryCount+1, maxRetries)
+				} else {
+					log.Printf("[CLEANUP ERROR] RequeueTask failed: %v", err)
+				}
+			} else {
+				failQuery := `
+					UPDATE tasks SET status = 'failed', error_message = ?, completed_at = ?, updated_at = ?
+					WHERE id = ? AND status = 'processing'
+				`
+				_, err := h.db.Exec(failQuery, "Task failed: heartbeat timeout, max retries reached", now, now, id)
+				if err == nil {
+					failedTasks++
+					log.Printf("[CLEANUP] Task %s failed (timeout, max retries)", id)
+				}
+			}
+		}
 	}
 
 	// 3. Clean old rate limit records (older than 7 days)
@@ -720,7 +740,6 @@ func (h *InternalHandlers) performCleanup() (map[string]interface{}, map[string]
 		DELETE FROM rate_limits 
 		WHERE last_request < ?
 	`
-
 	rateLimitResult, err := h.db.Exec(rateLimitQuery, sevenDaysAgo)
 	var cleanedRateLimits int64 = 0
 	if err == nil {
@@ -732,12 +751,12 @@ func (h *InternalHandlers) performCleanup() (map[string]interface{}, map[string]
 		DELETE FROM processor_metrics 
 		WHERE last_updated < ?
 	`
-
 	_, _ = h.db.Exec(metricsQuery, sevenDaysAgo)
 
 	cleaned := map[string]interface{}{
 		"tasks":      cleanedTasks,
-		"timedout":   timedoutTasks,
+		"timedout":   requeuedTasks,
+		"failed":     failedTasks,
 		"rateLimits": cleanedRateLimits,
 	}
 
@@ -1029,4 +1048,30 @@ func (h *InternalHandlers) getProcessorLoadMetrics() ([]map[string]interface{}, 
 	}
 
 	return metrics, nil
+}
+
+// POST /api/internal/requeue - Requeue task (return to pool)
+func (h *InternalHandlers) RequeueTask(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		TaskID      string `json:"taskId"`
+		ProcessorID string `json:"processor_id"`
+		Reason      string `json:"reason,omitempty"`
+	}
+	if err := utils.ParseJSON(r, &req); err != nil {
+		utils.SendError(w, http.StatusBadRequest, "Invalid JSON")
+		return
+	}
+	if req.TaskID == "" || req.ProcessorID == "" {
+		utils.SendError(w, http.StatusBadRequest, "taskId and processor_id are required")
+		return
+	}
+	err := h.db.RequeueTask(req.TaskID, req.ProcessorID, &req.Reason)
+	if err != nil {
+		utils.SendError(w, http.StatusInternalServerError, "Failed to requeue task")
+		return
+	}
+
+	log.Printf("Task %s requeued by processor %s with reason: %v", req.TaskID, req.ProcessorID, req.Reason)
+
+	utils.SendJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }

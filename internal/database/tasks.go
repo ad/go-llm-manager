@@ -333,3 +333,36 @@ func scanTask(rows *sql.Rows) (*Task, error) {
 
 	return &task, nil
 }
+
+func (db *DB) RequeueTask(taskID, processorID string, reason *string) error {
+	var query string
+	var args []interface{}
+	if reason != nil {
+		query = `
+			UPDATE tasks
+			SET status = 'pending',
+			    processor_id = NULL,
+			    heartbeat_at = NULL,
+			    processing_started_at = NULL,
+			    timeout_at = NULL,
+			    retry_count = retry_count + 1,
+			    error_message = ?
+			WHERE id = ? AND processor_id = ? AND status = 'processing'
+		`
+		args = []interface{}{*reason, taskID, processorID}
+	} else {
+		query = `
+			UPDATE tasks
+			SET status = 'pending',
+			    processor_id = NULL,
+			    heartbeat_at = NULL,
+			    processing_started_at = NULL,
+			    timeout_at = NULL,
+			    retry_count = retry_count + 1
+			WHERE id = ? AND processor_id = ? AND status = 'processing'
+		`
+		args = []interface{}{taskID, processorID}
+	}
+	_, err := db.Exec(query, args...)
+	return err
+}

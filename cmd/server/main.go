@@ -210,6 +210,14 @@ func main() {
 		middleware.CORS,
 	))
 
+	mux.Handle("/api/internal/requeue", middleware.Chain(
+		http.HandlerFunc(internalHandlers.RequeueTask),
+		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
+		middleware.CORS,
+		middleware.ContentType,
+	))
+
 	// Create server
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
 	server := &http.Server{
