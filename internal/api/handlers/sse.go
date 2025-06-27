@@ -91,14 +91,14 @@ func (h *SSEHandlers) ResultPolling(w http.ResponseWriter, r *http.Request) {
 
 	// Создание SSE клиента
 	clientID := uuid.New().String()
-	client := sse.NewClient(clientID, userID, taskID, w)
+	client := sse.NewClient(clientID, userID, taskID, w, func(id string) { h.manager.RemoveClient(id) })
 	if client == nil {
 		utils.SendError(w, http.StatusInternalServerError, "Failed to create SSE client")
 		return
 	}
 
 	h.manager.AddClient(client)
-	defer h.manager.RemoveClient(clientID)
+	// defer h.manager.RemoveClient(clientID) // больше не требуется, удаление теперь автоматическое
 
 	// Отправка начального heartbeat
 	client.Events <- sse.SSEEvent{
@@ -409,14 +409,14 @@ func (h *SSEHandlers) TaskStream(w http.ResponseWriter, r *http.Request) {
 
 	// Создание SSE клиента
 	clientID := uuid.New().String()
-	client := sse.NewClient(clientID, processorID, "", w)
+	client := sse.NewClient(clientID, processorID, "", w, func(id string) { h.manager.RemoveClient(id) })
 	if client == nil {
 		utils.SendError(w, http.StatusInternalServerError, "Failed to create SSE client")
 		return
 	}
 
 	h.manager.AddClient(client)
-	defer h.manager.RemoveClient(clientID)
+	// defer h.manager.RemoveClient(clientID) // больше не требуется, удаление теперь автоматическое
 
 	// Отправка начального соединения
 	client.Events <- sse.SSEEvent{
