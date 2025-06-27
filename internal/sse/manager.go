@@ -104,10 +104,9 @@ func (m *Manager) BroadcastPendingTaskToProcessors(task *database.Task) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, client := range m.clients {
-		// Processor clients have UserID set (processorID), TaskID is empty
 		if client.UserID != "" && client.TaskID == "" {
 			// Логируем broadcast задачи процессорам
-			log.Printf("[BROADCAST] Новая задача %s от пользователя %s отправлена процессору", task.ID, client.UserID)
+			log.Printf("[BROADCAST] Новая задача %s от пользователя %s отправлена процессору %s", task.ID, task.UserID, client.UserID)
 
 			select {
 			case client.Events <- SSEEvent{
