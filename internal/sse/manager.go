@@ -40,6 +40,8 @@ type Client struct {
 	Done    chan bool
 	mu      sync.Mutex
 	closed  bool
+	// Новый callback для удаления из Manager
+	onClose func(clientID string)
 }
 
 type Manager struct {
@@ -126,7 +128,7 @@ func (m *Manager) BroadcastPendingTaskToProcessors(task *database.Task) {
 	}
 }
 
-func NewClient(id, userID, taskID string, w http.ResponseWriter) *Client {
+func NewClient(id, userID, taskID string, w http.ResponseWriter, onClose func(clientID string)) *Client {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		return nil
@@ -140,6 +142,7 @@ func NewClient(id, userID, taskID string, w http.ResponseWriter) *Client {
 		Flusher: flusher,
 		Events:  make(chan SSEEvent, 10),
 		Done:    make(chan bool),
+		onClose: onClose,
 	}
 }
 
@@ -183,7 +186,12 @@ func (c *Client) SendEvent(event SSEEvent) error {
 }
 
 func (c *Client) Run() {
-	defer c.Close()
+	defer func() {
+		c.Close()
+		if c.onClose != nil {
+			c.onClose(c.ID)
+		}
+	}()
 
 	for {
 		select {
