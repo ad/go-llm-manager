@@ -119,7 +119,7 @@ func (db *DB) GetPendingTasks(limit int) ([]*Task, error) {
 
 	query := `
 		SELECT id, user_id, product_data, status, created_at, updated_at,
-			   priority, max_retries, estimated_duration, ollama_params
+			   priority, max_retries, estimated_duration, ollama_params, error_message
 		FROM tasks 
 		WHERE status = 'pending' 
 		ORDER BY priority DESC, created_at ASC 
@@ -140,7 +140,7 @@ func (db *DB) GetPendingTasks(limit int) ([]*Task, error) {
 		err := rows.Scan(
 			&task.ID, &task.UserID, &task.ProductData, &task.Status,
 			&task.CreatedAt, &task.UpdatedAt, &task.Priority, &task.MaxRetries,
-			&task.EstimatedDuration, &ollamaParamsJSON,
+			&task.EstimatedDuration, &ollamaParamsJSON, &task.ErrorMessage,
 		)
 		if err != nil {
 			return nil, err

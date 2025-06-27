@@ -12,6 +12,7 @@ let processorSSEConnection = null;
 let ssePollingConnection = null;
 let ssePollingTaskId = null;
 let ssePollingTaskCompleted = false;
+let tasksAutoRefreshInterval = null;
 
 // Автоматически устанавливаем базовый URL
 window.addEventListener('load', function() {
@@ -62,23 +63,22 @@ function switchTab(tabName) {
     document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.remove('active');
     });
-    
     // Убрать активность с всех табов
     document.querySelectorAll('.tab').forEach(tab => {
         tab.classList.remove('active');
     });
-    
     // Показать выбранный таб
     document.getElementById(tabName + '-content').classList.add('active');
     event.target.classList.add('active');
-    
     // Автоматически загружать данные для админ панели
     if (tabName === 'admin') {
         setTimeout(() => {
-            refreshTaskList();
+            loadAndDisplayAllTasks();
+            startTasksAutoRefresh();
         }, 100);
+    } else {
+        stopTasksAutoRefresh();
     }
-    
     log(`📂 Переключение на вкладку: ${tabName}`);
 }
 
@@ -709,218 +709,49 @@ function displayTaskResult(taskData) {
 //    - синий: processing задачи
 //    - желтый: pending задачи
 
-async function getAllTasks() {
-    await loadAllTasks();
-}
-
-async function getPendingTasks() {
-    await loadPendingTasks();
-}
-
-async function loadPendingTasks() {
+async function loadAndDisplayAllTasks() {
     try {
         const baseUrl = document.getElementById('baseUrl').value;
         const apiKey = document.getElementById('apiKey').value;
-        
-        log('⏳ Загрузка ожидающих задач...');
-
-        const response = await fetch(`${baseUrl}/api/internal/tasks`, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${apiKey}`
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        displayPendingTasks(data.tasks || []);
-        log(`✅ Загружено ожидающих задач: ${data.tasks?.length || 0}`, 'success');
-        
-    } catch (error) {
-        log(`❌ Ошибка загрузки ожидающих задач: ${error.message}`, 'error');
-    }
-}
-
-async function loadAllTasks() {
-    try {
-        const baseUrl = document.getElementById('baseUrl').value;
-        const apiKey = document.getElementById('apiKey').value;
-        
-        log('� Загрузка всех задач...');
-
+        log('📄 Загрузка всех задач...');
         const response = await fetch(`${baseUrl}/api/internal/all-tasks`, {
             method: 'GET',
             headers: {
                 'Authorization': `Bearer ${apiKey}`
             }
         });
-
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-
         const data = await response.json();
-        displayAllTasks(data.tasks || []);
-        log(`✅ Загружено всех задач: ${data.tasks?.length || 0}`, 'success');
-        
+        const allTasks = data.tasks || [];
+        const pendingTasks = allTasks.filter(t => t.status === 'pending');
+        displayPendingTasks(pendingTasks);
+        displayAllTasks(allTasks);
+        log(`✅ Загружено задач: всего ${allTasks.length}, ожидающих ${pendingTasks.length}`, 'success');
     } catch (error) {
-        log(`❌ Ошибка загрузки всех задач: ${error.message}`, 'error');
+        displayPendingTasks([]);
+        displayAllTasks([]);
+        log(`❌ Ошибка загрузки задач: ${error.message}`, 'error');
     }
 }
 
-function displayPendingTasks(tasks) {
-    const container = document.getElementById('pendingTasksList');
-    const title = document.getElementById('pendingTasksTitle');
-    
-    title.textContent = `⏳ Ожидающие задачи (${tasks.length})`;
-    
-    if (tasks.length === 0) {
-        container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Нет ожидающих задач</div>';
-        return;
-    }
-
-    container.innerHTML = '';
-    tasks.forEach(task => {
-        const taskEl = document.createElement('div');
-        taskEl.className = 'task-item';
-        
-        const createdAt = task.created_at ? new Date(task.created_at).toLocaleString() : 'Unknown';
-        
-        // Рассчитываем время в ожидании
-        const waitingTime = task.created_at ? Math.floor((Date.now() - task.created_at) / 1000) : 0;
-        const waitingTimeStr = waitingTime > 60 ? 
-            `${Math.floor(waitingTime / 60)}м ${waitingTime % 60}с` : 
-            `${waitingTime}с`;
-        
-        taskEl.innerHTML = `
-            <div style="flex: 1;">
-                <div style="font-weight: bold; margin-bottom: 5px;">
-                    ID: ${task.id}
-                    <span class="status pending">⏳ ${task.status || 'pending'}</span>
-                </div>
-                <div style="font-size: 0.9em; color: #666; margin-bottom: 5px;">
-                    User: ${task.user_id || 'Unknown'} | Created: ${createdAt}
-                </div>
-                <div style="font-size: 0.85em; color: #856404; margin-bottom: 5px; font-weight: 500;">
-                    ⏱️ В ожидании: ${waitingTimeStr}
-                </div>
-                <div style="max-height: 80px; overflow-y: auto; background: #f8f9fa; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em;">
-                    Prompt: ${(() => {
-                        try {
-                            const params = JSON.parse(task.ollama_params || '{}');
-                            return (params.prompt || 'Default prompt').substring(0, 150) + ((params.prompt || '').length > 150 ? '...' : '');
-                        } catch {
-                            return 'No prompt data';
-                        }
-                    })()}
-                </div>
-            </div>
-        `;
-        container.appendChild(taskEl);
-    });
+function startTasksAutoRefresh() {
+    if (tasksAutoRefreshInterval) return;
+    tasksAutoRefreshInterval = setInterval(loadAndDisplayAllTasks, 5000);
 }
 
-function displayAllTasks(tasks) {
-    const container = document.getElementById('allTasksList');
-    const title = document.getElementById('allTasksTitle');
-    
-    title.textContent = `📄 Все задачи (${tasks.length})`;
-    
-    if (tasks.length === 0) {
-        container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Нет задач</div>';
-        return;
+function stopTasksAutoRefresh() {
+    if (tasksAutoRefreshInterval) {
+        clearInterval(tasksAutoRefreshInterval);
+        tasksAutoRefreshInterval = null;
     }
-
-    container.innerHTML = '';
-    tasks.forEach(task => {
-        const taskEl = document.createElement('div');
-        taskEl.className = 'task-item';
-        
-        const createdAt = task.created_at ? new Date(task.created_at).toLocaleString() : 'Unknown';
-        const statusIcon = task.status === 'completed' ? '✅' : task.status === 'failed' ? '❌' : task.status === 'pending' ? '⏳' : '⚠️';
-        
-        // Рассчитываем время выполнения
-        let executionTimeStr = '';
-        if (task.status === 'completed' || task.status === 'failed') {
-            if (task.completed_at && task.created_at) {
-                // Общее время от создания до завершения
-                const totalTime = Math.floor((task.completed_at - task.created_at) / 1000);
-                const totalTimeStr = totalTime > 60 ? 
-                    `${Math.floor(totalTime / 60)}м ${totalTime % 60}с` : 
-                    `${totalTime}с`;
-                
-                // Время обработки от начала до завершения
-                if (task.processing_started_at) {
-                    const processingTime = Math.floor((task.completed_at - task.processing_started_at) / 1000);
-                    const processingTimeStr = processingTime > 60 ? 
-                        `${Math.floor(processingTime / 60)}м ${processingTime % 60}с` : 
-                        `${processingTime}с`;
-                    executionTimeStr = `${totalTimeStr} (обработка: ${processingTimeStr})`;
-                } else {
-                    executionTimeStr = totalTimeStr;
-                }
-            }
-        } else if (task.status === 'processing' && task.processing_started_at) {
-            const currentTime = Math.floor((Date.now() - task.processing_started_at) / 1000);
-            executionTimeStr = currentTime > 60 ? 
-                `${Math.floor(currentTime / 60)}м ${currentTime % 60}с` : 
-                `${currentTime}с`;
-        } else if (task.status === 'pending') {
-            const waitingTime = task.created_at ? Math.floor((Date.now() - task.created_at) / 1000) : 0;
-            executionTimeStr = waitingTime > 60 ? 
-                `${Math.floor(waitingTime / 60)}м ${waitingTime % 60}с` : 
-                `${waitingTime}с`;
-        }
-        
-        taskEl.innerHTML = `
-            <div style="flex: 1;">
-                <div style="font-weight: bold; margin-bottom: 5px;">
-                    <span class="status ${task.status || 'unknown'}">${statusIcon}</span>
-                    ID: ${task.id}
-                </div>
-                <div style="font-size: 0.9em; color: #666; margin-bottom: 5px;">
-                    User: ${task.user_id || 'Unknown'} | Created: ${createdAt}
-                </div>
-                ${executionTimeStr ? `
-                    <div style="font-size: 0.85em; color: ${task.status === 'completed' ? '#155724' : task.status === 'failed' ? '#721c24' : task.status === 'processing' ? '#004085' : '#856404'}; margin-bottom: 5px; font-weight: 500;">
-                        ⏱️ ${task.status === 'completed' ? 'Выполнено за:' : task.status === 'failed' ? 'Не удалось за:' : task.status === 'processing' ? 'Выполняется:' : 'В ожидании:'} ${executionTimeStr}
-                    </div>
-                ` : ''}
-                <div style="max-height: 80px; overflow-y: auto; background: #f8f9fa; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em;">
-                    Prompt: ${(() => {
-                        try {
-                            const params = JSON.parse(task.ollama_params || '{}');
-                            return (params.prompt || 'Default prompt').substring(0, 150) + ((params.prompt || '').length > 150 ? '...' : '');
-                        } catch {
-                            return 'No prompt data';
-                        }
-                    })()}
-                </div>
-                <div style="max-height: 80px; overflow-y: auto; background: #f8f9fa; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em;">
-                    Data: ${(task.product_data || 'No data').substring(0, 150)}${(task.product_data || '').length > 150 ? '...' : ''}
-                </div>
-                ${task.result ? `
-                    <div style="margin-top: 8px; max-height: 80px; overflow-y: auto; background: #e7f3ff; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em;">
-                        <strong>Result:</strong> ${task.result.substring(0, 150)}${task.result.length > 150 ? '...' : ''}
-                    </div>
-                ` : ''}
-                ${task.status === 'failed' && task.error_message ? `
-                    <div style="margin-top: 8px; max-height: 80px; overflow-y: auto; background: #f8d7da; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em; color: #721c24;">
-                        <strong>❌ Error:</strong> ${task.error_message.substring(0, 200)}${task.error_message.length > 200 ? '...' : ''}
-                    </div>
-                ` : ''}
-            </div>
-        `;
-        container.appendChild(taskEl);
-    });
 }
 
+// Заменяем refreshTaskList на единый вызов
 async function refreshTaskList() {
     log('🔄 Обновление списков задач...');
-    await Promise.all([loadPendingTasks(), loadAllTasks()]);
+    await loadAndDisplayAllTasks();
 }
 
 async function runCleanup() {
@@ -1680,4 +1511,129 @@ window.logoutApiKey = function() {
     if (document.getElementById('main-content')) document.getElementById('main-content').style.display = 'none';
     if (document.getElementById('login-modal')) document.getElementById('login-modal').style.display = '';
 };
+
+function displayPendingTasks(tasks) {
+    const container = document.getElementById('pendingTasksList');
+    const title = document.getElementById('pendingTasksTitle');
+    title.textContent = `⏳ Ожидающие задачи (${tasks.length})`;
+    if (tasks.length === 0) {
+        container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Нет ожидающих задач</div>';
+        return;
+    }
+    container.innerHTML = '';
+    tasks.forEach(task => {
+        const taskEl = document.createElement('div');
+        taskEl.className = 'task-item';
+        const createdAt = task.created_at ? new Date(task.created_at).toLocaleString() : 'Unknown';
+        const waitingTime = task.created_at ? Math.floor((Date.now() - task.created_at) / 1000) : 0;
+        const waitingTimeStr = waitingTime > 60 ? `${Math.floor(waitingTime / 60)}м ${waitingTime % 60}с` : `${waitingTime}с`;
+        taskEl.innerHTML = `
+            <div style="flex: 1;">
+                <div style="font-weight: bold; margin-bottom: 5px;">
+                    ID: ${task.id}
+                    <span class="status pending">⏳ ${task.status || 'pending'}</span>
+                </div>
+                <div style="font-size: 0.9em; color: #666; margin-bottom: 5px;">
+                    User: ${task.user_id || 'Unknown'} | Created: ${createdAt}
+                </div>
+                <div style="font-size: 0.85em; color: #856404; margin-bottom: 5px; font-weight: 500;">
+                    ⏱️ В ожидании: ${waitingTimeStr}
+                </div>
+                <div style="max-height: 80px; overflow-y: auto; background: #f8f9fa; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em;">
+                    Prompt: ${(() => {
+                        try {
+                            const params = JSON.parse(task.ollama_params || '{}');
+                            return (params.prompt || 'Default prompt').substring(0, 150) + ((params.prompt || '').length > 150 ? '...' : '');
+                        } catch {
+                            return 'No prompt data';
+                        }
+                    })()}
+                </div>
+                ${(task.error_message && task.error_message.length > 0) ? `
+                    <div style="margin-top: 8px; max-height: 80px; overflow-y: auto; background: #f8d7da; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em; color: #721c24;">
+                        <strong>Ошибка:</strong> ${task.error_message.substring(0, 200)}${task.error_message.length > 200 ? '...' : ''}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+        container.appendChild(taskEl);
+    });
+}
+
+function displayAllTasks(tasks) {
+    const container = document.getElementById('allTasksList');
+    const title = document.getElementById('allTasksTitle');
+    title.textContent = `📄 Все задачи (${tasks.length})`;
+    if (tasks.length === 0) {
+        container.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Нет задач</div>';
+        return;
+    }
+    container.innerHTML = '';
+    tasks.forEach(task => {
+        const taskEl = document.createElement('div');
+        taskEl.className = 'task-item';
+        const createdAt = task.created_at ? new Date(task.created_at).toLocaleString() : 'Unknown';
+        const statusIcon = task.status === 'completed' ? '✅' : task.status === 'failed' ? '❌' : task.status === 'pending' ? '⏳' : '⚠️';
+        let executionTimeStr = '';
+        if (task.status === 'completed' || task.status === 'failed') {
+            if (task.completed_at && task.created_at) {
+                const totalTime = Math.floor((task.completed_at - task.created_at) / 1000);
+                const totalTimeStr = totalTime > 60 ? `${Math.floor(totalTime / 60)}м ${totalTime % 60}с` : `${totalTime}с`;
+                if (task.processing_started_at) {
+                    const processingTime = Math.floor((task.completed_at - task.processing_started_at) / 1000);
+                    const processingTimeStr = processingTime > 60 ? `${Math.floor(processingTime / 60)}м ${processingTime % 60}с` : `${processingTime}с`;
+                    executionTimeStr = `${totalTimeStr} (обработка: ${processingTimeStr})`;
+                } else {
+                    executionTimeStr = totalTimeStr;
+                }
+            }
+        } else if (task.status === 'processing' && task.processing_started_at) {
+            const currentTime = Math.floor((Date.now() - task.processing_started_at) / 1000);
+            executionTimeStr = currentTime > 60 ? `${Math.floor(currentTime / 60)}м ${currentTime % 60}с` : `${currentTime}с`;
+        } else if (task.status === 'pending') {
+            const waitingTime = task.created_at ? Math.floor((Date.now() - task.created_at) / 1000) : 0;
+            executionTimeStr = waitingTime > 60 ? `${Math.floor(waitingTime / 60)}м ${waitingTime % 60}с` : `${waitingTime}с`;
+        }
+        taskEl.innerHTML = `
+            <div style="flex: 1;">
+                <div style="font-weight: bold; margin-bottom: 5px;">
+                    <span class="status ${task.status || 'unknown'}">${statusIcon}</span>
+                    ID: ${task.id}
+                </div>
+                <div style="font-size: 0.9em; color: #666; margin-bottom: 5px;">
+                    User: ${task.user_id || 'Unknown'} | Created: ${createdAt}
+                </div>
+                ${executionTimeStr ? `
+                    <div style="font-size: 0.85em; color: ${task.status === 'completed' ? '#155724' : task.status === 'failed' ? '#721c24' : task.status === 'processing' ? '#004085' : '#856404'}; margin-bottom: 5px; font-weight: 500;">
+                        ⏱️ ${task.status === 'completed' ? 'Выполнено за:' : task.status === 'failed' ? 'Не удалось за:' : task.status === 'processing' ? 'Выполняется:' : 'В ожидании:'} ${executionTimeStr}
+                    </div>
+                ` : ''}
+                <div style="max-height: 80px; overflow-y: auto; background: #f8f9fa; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em;">
+                    Prompt: ${(() => {
+                        try {
+                            const params = JSON.parse(task.ollama_params || '{}');
+                            return (params.prompt || 'Default prompt').substring(0, 150) + ((params.prompt || '').length > 150 ? '...' : '');
+                        } catch {
+                            return 'No prompt data';
+                        }
+                    })()}
+                </div>
+                <div style="max-height: 80px; overflow-y: auto; background: #f8f9fa; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em;">
+                    Data: ${(task.product_data || 'No data').substring(0, 150)}${(task.product_data || '').length > 150 ? '...' : ''}
+                </div>
+                ${(task.result && task.result.length > 0) ? `
+                    <div style="margin-top: 8px; max-height: 80px; overflow-y: auto; background: #e7f3ff; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em;">
+                        <strong>Result:</strong> ${task.result.substring(0, 150)}${task.result.length > 150 ? '...' : ''}
+                    </div>
+                ` : ''}
+                ${(task.error_message && task.error_message.length > 0) ? `
+                    <div style="margin-top: 8px; max-height: 80px; overflow-y: auto; background: #f8d7da; padding: 8px; border-radius: 4px; font-family: monospace; font-size: 0.85em; color: #721c24;">
+                        <strong>Ошибка:</strong> ${task.error_message.substring(0, 200)}${task.error_message.length > 200 ? '...' : ''}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+        container.appendChild(taskEl);
+    });
+}
 

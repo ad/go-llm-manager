@@ -232,6 +232,13 @@ func (h *InternalHandlers) ClaimTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Логируем кому отправлены задачи
+	for _, task := range claimedTasks {
+		if task != nil && task.ID != "" && task.ProcessorID != nil {
+			log.Printf("[CLAIM] Task %s отправлена процессору %s", task.ID, *task.ProcessorID)
+		}
+	}
+
 	response := map[string]interface{}{
 		"success":       true,
 		"tasks":         claimedTasks,

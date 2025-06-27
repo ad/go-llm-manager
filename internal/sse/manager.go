@@ -3,6 +3,7 @@ package sse
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -105,6 +106,9 @@ func (m *Manager) BroadcastPendingTaskToProcessors(task *database.Task) {
 	for _, client := range m.clients {
 		// Processor clients have UserID set (processorID), TaskID is empty
 		if client.UserID != "" && client.TaskID == "" {
+			// Логируем broadcast задачи процессорам
+			log.Printf("[BROADCAST] Новая задача %s от пользователя %s отправлена процессору", task.ID, client.UserID)
+
 			select {
 			case client.Events <- SSEEvent{
 				Type: EventTaskAvailable,
