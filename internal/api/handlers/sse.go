@@ -98,7 +98,12 @@ func (h *SSEHandlers) ResultPolling(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.manager.AddClient(client)
-	// defer h.manager.RemoveClient(clientID) // больше не требуется, удаление теперь автоматическое
+
+	// Следим за разрывом соединения
+	go func() {
+		<-r.Context().Done()
+		client.Close()
+	}()
 
 	// Отправка начального heartbeat
 	client.Events <- sse.SSEEvent{
@@ -141,7 +146,8 @@ func (h *SSEHandlers) pollTask(client *sse.Client, taskID, userID string, pollIn
 
 			// Проверка таймаута
 			if time.Since(startTime) > time.Duration(maxDuration)*time.Millisecond {
-				client.Events <- sse.SSEEvent{
+				select {
+				case client.Events <- sse.SSEEvent{
 					Type: sse.EventError,
 					Data: map[string]interface{}{
 						"error":           "Polling timeout exceeded",
@@ -151,6 +157,10 @@ func (h *SSEHandlers) pollTask(client *sse.Client, taskID, userID string, pollIn
 						"reconnectDelay":  1000,
 					},
 					Timestamp: time.Now().UnixMilli(),
+				}:
+					// успешно отправили
+				default:
+					// канал закрыт, не отправляем
 				}
 				return
 			}
@@ -158,7 +168,8 @@ func (h *SSEHandlers) pollTask(client *sse.Client, taskID, userID string, pollIn
 			// Получение задачи
 			task, err := h.db.GetTask(taskID)
 			if err != nil {
-				client.Events <- sse.SSEEvent{
+				select {
+				case client.Events <- sse.SSEEvent{
 					Type: sse.EventError,
 					Data: map[string]interface{}{
 						"error":           "Database error during polling",
@@ -167,6 +178,10 @@ func (h *SSEHandlers) pollTask(client *sse.Client, taskID, userID string, pollIn
 						"reconnectDelay":  1000,
 					},
 					Timestamp: time.Now().UnixMilli(),
+				}:
+					// успешно отправили
+				default:
+					// канал закрыт, не отправляем
 				}
 				return
 			}
@@ -196,15 +211,19 @@ func (h *SSEHandlers) pollTask(client *sse.Client, taskID, userID string, pollIn
 					}
 					// Закрыть клиент после отправки финального события
 					go func() {
-						time.Sleep(1 * time.Second) // Дать больше времени на отправку
 						// Явно отправить финальный heartbeat перед закрытием
-						client.Events <- sse.SSEEvent{
+						select {
+						case client.Events <- sse.SSEEvent{
 							Type: sse.EventHeartbeat,
 							Data: map[string]interface{}{
 								"message": "Final heartbeat before close",
 								"taskId":  taskID,
 							},
 							Timestamp: time.Now().UnixMilli(),
+						}:
+							// успешно отправили
+						default:
+							// канал закрыт, не отправляем
 						}
 						time.Sleep(100 * time.Millisecond)
 						client.Close()
@@ -232,15 +251,20 @@ func (h *SSEHandlers) pollTask(client *sse.Client, taskID, userID string, pollIn
 					}
 					// Закрыть клиент после отправки финального события
 					go func() {
-						time.Sleep(1 * time.Second) // Дать больше времени на отправку
+						// time.Sleep(1 * time.Second) // Дать больше времени на отправку
 						// Явно отправить финальный heartbeat перед закрытием
-						client.Events <- sse.SSEEvent{
+						select {
+						case client.Events <- sse.SSEEvent{
 							Type: sse.EventHeartbeat,
 							Data: map[string]interface{}{
 								"message": "Final heartbeat before close",
 								"taskId":  taskID,
 							},
 							Timestamp: time.Now().UnixMilli(),
+						}:
+							// успешно отправили
+						default:
+							// канал закрыт, не отправляем
 						}
 						time.Sleep(100 * time.Millisecond)
 						client.Close()
@@ -249,7 +273,8 @@ func (h *SSEHandlers) pollTask(client *sse.Client, taskID, userID string, pollIn
 				}
 
 				// Для промежуточных статусов отправляем task_status
-				client.Events <- sse.SSEEvent{
+				select {
+				case client.Events <- sse.SSEEvent{
 					Type: sse.EventTaskStatus,
 					Data: map[string]interface{}{
 						"taskId":              task.ID,
@@ -259,6 +284,10 @@ func (h *SSEHandlers) pollTask(client *sse.Client, taskID, userID string, pollIn
 						"processingStartedAt": formatTimePtr(task.ProcessingStartedAt),
 					},
 					Timestamp: time.Now().UnixMilli(),
+				}:
+					// успешно отправили
+				default:
+					// канал закрыт, не отправляем
 				}
 			}
 
@@ -280,13 +309,18 @@ func (h *SSEHandlers) sendHeartbeats(client *sse.Client, interval, maxDuration i
 				return
 			}
 
-			client.Events <- sse.SSEEvent{
+			select {
+			case client.Events <- sse.SSEEvent{
 				Type: sse.EventHeartbeat,
 				Data: map[string]interface{}{
 					"timestamp": time.Now().UnixMilli(),
 					"taskId":    client.TaskID,
 				},
 				Timestamp: time.Now().UnixMilli(),
+			}:
+				// успешно отправили
+			default:
+				// канал закрыт, не отправляем
 			}
 
 		case <-taskDone:
@@ -416,7 +450,12 @@ func (h *SSEHandlers) TaskStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.manager.AddClient(client)
-	// defer h.manager.RemoveClient(clientID) // больше не требуется, удаление теперь автоматическое
+
+	// Следим за разрывом соединения
+	go func() {
+		<-r.Context().Done()
+		client.Close()
+	}()
 
 	// Отправка начального соединения
 	client.Events <- sse.SSEEvent{
@@ -450,16 +489,21 @@ func (h *SSEHandlers) checkPendingTasks(client *sse.Client) {
 
 	for _, task := range tasks {
 		// log.Printf("checkPendingTasks: sending task %s (priority=%d) to processor %s", task.ID, task.Priority, client.UserID)
-		client.Events <- sse.SSEEvent{
+		select {
+		case client.Events <- sse.SSEEvent{
 			Type: sse.EventTaskAvailable,
 			Data: map[string]interface{}{
 				"taskId":              task.ID,
 				"priority":            task.Priority,
-				"estimatedComplexity": 3, // Default complexity
+				"estimatedComplexity": 3,
 				"productData":         task.ProductData,
 				"ollamaParams":        task.OllamaParams,
 			},
 			Timestamp: time.Now().UnixMilli(),
+		}:
+			// успешно отправили
+		default:
+			// канал закрыт, не отправляем
 		}
 	}
 }
@@ -473,7 +517,8 @@ func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID st
 		select {
 		case <-ticker.C:
 			if time.Since(startTime) > time.Duration(maxDuration)*time.Millisecond {
-				client.Events <- sse.SSEEvent{
+				select {
+				case client.Events <- sse.SSEEvent{
 					Type: sse.EventError,
 					Data: map[string]interface{}{
 						"error":       "Connection timeout exceeded",
@@ -481,17 +526,26 @@ func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID st
 						"processorId": processorID,
 					},
 					Timestamp: time.Now().UnixMilli(),
+				}:
+					// успешно отправили
+				default:
+					// канал закрыт, не отправляем
 				}
 				return
 			}
 
-			client.Events <- sse.SSEEvent{
+			select {
+			case client.Events <- sse.SSEEvent{
 				Type: sse.EventHeartbeat,
 				Data: map[string]interface{}{
 					"processorId": processorID,
 					"uptime":      time.Since(startTime).Milliseconds(),
 				},
 				Timestamp: time.Now().UnixMilli(),
+			}:
+				// успешно отправили
+			default:
+				// канал закрыт, не отправляем
 			}
 
 		case <-client.Done:
