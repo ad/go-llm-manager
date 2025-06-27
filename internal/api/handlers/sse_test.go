@@ -63,34 +63,7 @@ func setupTestDB(t *testing.T) *database.DB {
 		active_tasks INTEGER NOT NULL DEFAULT 0,
 		last_updated INTEGER NOT NULL,
 		created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
-	);
-
-	CREATE TABLE task_processor_affinity (
-		task_type TEXT NOT NULL,
-		processor_id TEXT NOT NULL,
-		affinity_score REAL NOT NULL DEFAULT 1.0,
-		PRIMARY KEY (task_type, processor_id)
-	);
-
-	CREATE VIEW processor_load_view AS
-	SELECT 
-		pm.processor_id,
-		pm.cpu_usage,
-		pm.memory_usage,
-		pm.queue_size,
-		pm.last_updated,
-		COUNT(t.id) as current_active_tasks,
-		COALESCE(AVG(unixepoch() * 1000 - t.processing_started_at), 0) as avg_processing_time,
-		CASE 
-			WHEN pm.last_updated < unixepoch() * 1000 - 300000 THEN 'offline'
-			WHEN pm.cpu_usage > 80 OR pm.memory_usage > 80 THEN 'overloaded'
-			WHEN COUNT(t.id) > 10 THEN 'busy'
-			ELSE 'available'
-		END as status
-	FROM processor_metrics pm
-	LEFT JOIN tasks t ON pm.processor_id = t.processor_id AND t.status = 'processing'
-	GROUP BY pm.processor_id, pm.cpu_usage, pm.memory_usage, pm.queue_size, pm.last_updated;
-	`)
+	);`)
 	if err != nil {
 		t.Fatalf("failed to create initial db tables: %v", err)
 	}

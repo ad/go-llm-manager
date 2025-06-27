@@ -86,12 +86,6 @@ type ProcessorMetrics struct {
 	CreatedAt   int64   `json:"created_at" db:"created_at"`
 }
 
-type TaskProcessorAffinity struct {
-	TaskType      string  `json:"task_type" db:"task_type"`
-	ProcessorID   string  `json:"processor_id" db:"processor_id"`
-	AffinityScore float64 `json:"affinity_score" db:"affinity_score"`
-}
-
 // Request/Response models
 type CreateTaskRequest struct {
 	ProductData  string        `json:"product_data" binding:"required"`

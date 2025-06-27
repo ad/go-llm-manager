@@ -43,35 +43,6 @@ CREATE TABLE processor_metrics (
     created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 );
 
--- Add processor affinity for certain task types (optional)
-CREATE TABLE task_processor_affinity (
-    task_type TEXT NOT NULL,
-    processor_id TEXT NOT NULL,
-    affinity_score REAL NOT NULL DEFAULT 1.0,
-    PRIMARY KEY (task_type, processor_id)
-);
-
--- Create view for processor load overview
-CREATE VIEW processor_load_view AS
-SELECT 
-    pm.processor_id,
-    pm.cpu_usage,
-    pm.memory_usage,
-    pm.queue_size,
-    pm.last_updated,
-    COUNT(t.id) as current_active_tasks,
-    COALESCE(AVG(unixepoch() * 1000 - t.processing_started_at), 0) as avg_processing_time,
-    CASE 
-        WHEN pm.last_updated < unixepoch() * 1000 - 300000 THEN 'offline'
-        WHEN pm.cpu_usage > 80 OR pm.memory_usage > 80 THEN 'overloaded'
-        WHEN COUNT(t.id) > 10 THEN 'busy'
-        ELSE 'available'
-    END as status
-FROM processor_metrics pm
-LEFT JOIN tasks t ON pm.processor_id = t.processor_id AND t.status = 'processing'
-GROUP BY pm.processor_id, pm.cpu_usage, pm.memory_usage, pm.queue_size, pm.last_updated;
-
-
 CREATE INDEX idx_tasks_status ON tasks(status);
 CREATE INDEX idx_tasks_user_id ON tasks(user_id);
 CREATE INDEX idx_tasks_created_at ON tasks(created_at);

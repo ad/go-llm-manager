@@ -134,14 +134,6 @@ func (db *DB) RunMigrations() error {
 		created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
 	);
 
-	-- Процессорная привязка для типов задач
-	CREATE TABLE IF NOT EXISTS task_processor_affinity (
-		task_type TEXT NOT NULL,
-		processor_id TEXT NOT NULL,
-		affinity_score REAL NOT NULL DEFAULT 1.0,
-		PRIMARY KEY (task_type, processor_id)
-	);
-
 	-- Индексы для производительности
 	CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 	CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
