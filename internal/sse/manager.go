@@ -108,7 +108,7 @@ func (m *Manager) BroadcastPendingTaskToProcessors(task *database.Task) {
 	for _, client := range m.clients {
 		if client.UserID != "" && client.TaskID == "" {
 			// Логируем broadcast задачи процессорам
-			log.Printf("[BROADCAST] Новая задача %s от пользователя %s отправлена процессору %s", task.ID, task.UserID, client.UserID)
+			log.Printf("[BROADCAST] Новая задача %s от пользователя %s отправлена процессору %s (%s)", task.ID, task.UserID, client.UserID, client.ID)
 
 			select {
 			case client.Events <- SSEEvent{
