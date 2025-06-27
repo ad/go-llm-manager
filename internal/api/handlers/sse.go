@@ -372,6 +372,8 @@ func formatTimePtr(t *int64) interface{} {
 
 // GET /api/internal/task-stream - SSE для процессоров
 func (h *SSEHandlers) TaskStream(w http.ResponseWriter, r *http.Request) {
+	// log.Printf("Received SSE request for task stream: %s", r.URL.String())
+
 	if r.Method != http.MethodGet {
 		utils.SendError(w, http.StatusMethodNotAllowed, "Method not allowed. Use GET for SSE.")
 		return
@@ -440,16 +442,22 @@ func (h *SSEHandlers) TaskStream(w http.ResponseWriter, r *http.Request) {
 func (h *SSEHandlers) checkPendingTasks(client *sse.Client) {
 	tasks, err := h.db.GetPendingTasks(10)
 	if err != nil {
+		// log.Printf("checkPendingTasks: error fetching tasks: %v", err)
 		return
 	}
 
+	// log.Printf("checkPendingTasks: found %d pending tasks for processor %s", len(tasks), client.UserID)
+
 	for _, task := range tasks {
+		// log.Printf("checkPendingTasks: sending task %s (priority=%d) to processor %s", task.ID, task.Priority, client.UserID)
 		client.Events <- sse.SSEEvent{
 			Type: sse.EventTaskAvailable,
 			Data: map[string]interface{}{
 				"taskId":              task.ID,
 				"priority":            task.Priority,
 				"estimatedComplexity": 3, // Default complexity
+				"productData":         task.ProductData,
+				"ollamaParams":        task.OllamaParams,
 			},
 			Timestamp: time.Now().UnixMilli(),
 		}
@@ -490,4 +498,9 @@ func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID st
 			return
 		}
 	}
+}
+
+// Экспортируем менеджер для интеграции с public.go
+func (h *SSEHandlers) Manager() *sse.Manager {
+	return h.manager
 }

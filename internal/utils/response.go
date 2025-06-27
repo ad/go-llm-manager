@@ -46,6 +46,7 @@ func SendError(w http.ResponseWriter, statusCode int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(ErrorResponse{Error: message})
+	// log.Printf("SendError HTTP %d: %s", statusCode, message)
 }
 
 // SendSuccess sends a JSON success response
@@ -53,6 +54,7 @@ func SendSuccess(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(SuccessResponse{Success: true, Data: data})
+	// log.Printf("SendSuccess: %v", data)
 }
 
 // SendSuccessWithStatus sends a successful response with custom status code
@@ -61,6 +63,7 @@ func SendSuccessWithStatus(w http.ResponseWriter, statusCode int, data interface
 		"success": true,
 		"data":    data,
 	})
+	// log.Printf("SendSuccessWithStatus HTTP %d: %v", statusCode, data)
 }
 
 // SendJSON sends a JSON response with custom status code
@@ -116,6 +119,7 @@ func SendDetailedError(w http.ResponseWriter, statusCode int, code, message, det
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(errorResp)
+	// log.Printf("SendDetailedError HTTP %d: %+v", statusCode, errorResp)
 }
 
 // LogAndSendError logs error details and sends a simplified error response

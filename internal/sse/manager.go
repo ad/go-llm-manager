@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
+
+	"github.com/ad/go-llm-manager/internal/database"
 )
 
 type EventType string
@@ -90,6 +93,31 @@ func (m *Manager) BroadcastToUser(userID string, event SSEEvent) {
 			case client.Events <- event:
 			default:
 				// Client channel is full, skip
+			}
+		}
+	}
+}
+
+// Broadcasts a new pending task to all connected processor clients
+func (m *Manager) BroadcastPendingTaskToProcessors(task *database.Task) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, client := range m.clients {
+		// Processor clients have UserID set (processorID), TaskID is empty
+		if client.UserID != "" && client.TaskID == "" {
+			select {
+			case client.Events <- SSEEvent{
+				Type: EventTaskAvailable,
+				Data: map[string]interface{}{
+					"taskId":       task.ID,
+					"priority":     task.Priority,
+					"productData":  task.ProductData,
+					"ollamaParams": task.OllamaParams,
+				},
+				Timestamp: time.Now().UnixMilli(),
+			}:
+			default:
+				// Channel full, skip
 			}
 		}
 	}

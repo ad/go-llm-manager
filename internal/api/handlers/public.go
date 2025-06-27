@@ -6,6 +6,7 @@ import (
 
 	"github.com/ad/go-llm-manager/internal/auth"
 	"github.com/ad/go-llm-manager/internal/database"
+	"github.com/ad/go-llm-manager/internal/sse"
 	"github.com/ad/go-llm-manager/internal/utils"
 
 	"github.com/google/uuid"
@@ -21,6 +22,13 @@ func NewPublicHandlers(db *database.DB, jwtAuth *auth.JWTAuth) *PublicHandlers {
 		db:      db,
 		jwtAuth: jwtAuth,
 	}
+}
+
+// SSE manager для оповещения процессоров о новых задачах
+var sseManagerInstance *sse.Manager
+
+func SetSSEManager(m *sse.Manager) {
+	sseManagerInstance = m
 }
 
 // GET / - Health check + endpoints info (matching TypeScript exactly)
@@ -123,6 +131,11 @@ func (h *PublicHandlers) CreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 		utils.SendError(w, http.StatusInternalServerError, "Failed to create task")
 		return
+	}
+
+	// Оповещение процессоров через SSE о новой задаче
+	if sseManagerInstance != nil {
+		sseManagerInstance.BroadcastPendingTaskToProcessors(task)
 	}
 
 	// Calculate estimated wait time (human-readable format like TypeScript)

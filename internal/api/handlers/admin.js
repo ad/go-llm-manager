@@ -1460,9 +1460,9 @@ function startSSEPollingDemo() {
 }
 
 function startSSEResultPolling(taskId, token) {
-    showSSEPollingStatus('info', `📡 Подключение SSE к /api/result-polling?task_id=${taskId}&token=***...`);
-    
-    const sseUrl = `/api/result-polling?task_id=${taskId}&token=${encodeURIComponent(token)}`;
+    showSSEPollingStatus('info', `📡 Подключение SSE к /api/result-polling?taskId=${taskId}&token=***...`);
+
+    const sseUrl = `/api/result-polling?taskId=${taskId}&token=${encodeURIComponent(token)}`;
     ssePollingConnection = new EventSource(sseUrl);
     
     ssePollingConnection.onopen = function() {

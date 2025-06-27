@@ -174,7 +174,7 @@ type ClaimTasksRequest struct {
 }
 
 type HeartbeatRequest struct {
-	TaskID      string   `json:"task_id" binding:"required"`
+	TaskID      string   `json:"taskId" binding:"required"`
 	ProcessorID string   `json:"processor_id" binding:"required"`
 	CPUUsage    *float64 `json:"cpu_usage"`
 	MemoryUsage *float64 `json:"memory_usage"`
@@ -182,7 +182,7 @@ type HeartbeatRequest struct {
 }
 
 type CompleteTaskRequest struct {
-	TaskID       string `json:"task_id" binding:"required"`
+	TaskID       string `json:"taskId" binding:"required"`
 	ProcessorID  string `json:"processor_id" binding:"required"`
 	Status       string `json:"status" binding:"required"`
 	Result       string `json:"result,omitempty"`

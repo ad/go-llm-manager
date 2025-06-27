@@ -115,6 +115,8 @@ func (db *DB) UpdateTaskStatus(id, status string, result, errorMessage *string) 
 }
 
 func (db *DB) GetPendingTasks(limit int) ([]*Task, error) {
+	// log.Printf("Fetching up to %d pending tasks", limit)
+
 	query := `
 		SELECT id, user_id, product_data, status, created_at, updated_at,
 			   priority, max_retries, estimated_duration, ollama_params
@@ -151,6 +153,8 @@ func (db *DB) GetPendingTasks(limit int) ([]*Task, error) {
 
 		tasks = append(tasks, &task)
 	}
+
+	// log.Printf("Fetched %d pending tasks", len(tasks))
 
 	return tasks, rows.Err()
 }

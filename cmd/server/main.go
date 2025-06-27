@@ -44,6 +44,9 @@ func main() {
 	internalHandlers := handlers.NewInternalHandlers(db, jwtAuth)
 	sseHandlers := handlers.NewSSEHandlers(db, jwtAuth)
 
+	// Связываем SSE manager с publicHandlers для push новых задач
+	handlers.SetSSEManager(sseHandlers.Manager())
+
 	// Setup router
 	mux := http.NewServeMux()
 
