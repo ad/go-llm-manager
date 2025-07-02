@@ -76,27 +76,29 @@ func (db *DB) CreateTask(task *Task) error {
 }
 
 func (db *DB) GetTask(id string) (*Task, error) {
-	query := `
-		SELECT id, user_id, product_data, status, result, error_message,
-			   created_at, updated_at, completed_at, priority, retry_count,
-			   max_retries, processor_id, processing_started_at, heartbeat_at,
-			   timeout_at, ollama_params, estimated_duration, actual_duration
-		FROM tasks WHERE id = ?
-	`
-
 	var task Task
 	var ollamaParamsJSON sql.NullString
 	var completedAt, processingStartedAt, heartbeatAt, timeoutAt sql.NullInt64
 	var result, errorMessage, processorID sql.NullString
 	var actualDuration sql.NullInt64
 
-	err := db.QueryRow(query, id).Scan(
-		&task.ID, &task.UserID, &task.ProductData, &task.Status,
-		&result, &errorMessage, &task.CreatedAt, &task.UpdatedAt,
-		&completedAt, &task.Priority, &task.RetryCount, &task.MaxRetries,
-		&processorID, &processingStartedAt, &heartbeatAt, &timeoutAt,
-		&ollamaParamsJSON, &task.EstimatedDuration, &actualDuration,
-	)
+	err := retryOnBusy(3, func() error {
+		query := `
+			SELECT id, user_id, product_data, status, result, error_message,
+				   created_at, updated_at, completed_at, priority, retry_count,
+				   max_retries, processor_id, processing_started_at, heartbeat_at,
+				   timeout_at, ollama_params, estimated_duration, actual_duration
+			FROM tasks WHERE id = ?
+		`
+
+		return db.QueryRow(query, id).Scan(
+			&task.ID, &task.UserID, &task.ProductData, &task.Status,
+			&result, &errorMessage, &task.CreatedAt, &task.UpdatedAt,
+			&completedAt, &task.Priority, &task.RetryCount, &task.MaxRetries,
+			&processorID, &processingStartedAt, &heartbeatAt, &timeoutAt,
+			&ollamaParamsJSON, &task.EstimatedDuration, &actualDuration,
+		)
+	})
 
 	if err != nil {
 		return nil, err

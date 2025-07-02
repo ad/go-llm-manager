@@ -15,6 +15,38 @@ import (
 	"github.com/ad/go-llm-manager/internal/utils"
 )
 
+// retryOnBusy executes a function with retry logic for SQLite BUSY errors
+func retryOnBusy(maxRetries int, fn func() error) error {
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		err = fn()
+		if err == nil {
+			return nil
+		}
+
+		// Check if it's a SQLite BUSY error and retry
+		if i < maxRetries-1 {
+			errStr := strings.ToLower(err.Error())
+			isBusyError := strings.Contains(errStr, "database is locked") ||
+				strings.Contains(errStr, "database table is locked") ||
+				strings.Contains(errStr, "busy") ||
+				strings.Contains(errStr, "sqlite_busy") ||
+				strings.Contains(errStr, "locked")
+
+			if isBusyError {
+				// Exponential backoff with jitter for BUSY errors
+				baseDelay := time.Duration(i+1) * 100 * time.Millisecond
+				jitter := time.Duration(i*50) * time.Millisecond
+				time.Sleep(baseDelay + jitter)
+				continue
+			}
+			// For other errors, also retry but with less delay
+			time.Sleep(time.Duration(i+1) * 20 * time.Millisecond)
+		}
+	}
+	return err
+}
+
 type InternalHandlers struct {
 	db      *database.DB
 	jwtAuth *auth.JWTAuth
@@ -269,34 +301,44 @@ func (h *InternalHandlers) claimTasksBatch(processorID string, batchSize int, ti
 	timeoutAt := now + timeoutMs
 
 	for _, task := range tasks {
-		// Update task to processing
-		query := `
-			UPDATE tasks 
-			SET status = 'processing', 
-			    processor_id = ?, 
-			    processing_started_at = ?, 
-			    heartbeat_at = ?,
-			    timeout_at = ?,
-			    updated_at = ?
-			WHERE id = ? AND status = 'pending'
-		`
+		// Update task to processing with retry logic
+		err := retryOnBusy(5, func() error {
+			query := `
+				UPDATE tasks 
+				SET status = 'processing', 
+					processor_id = ?, 
+					processing_started_at = ?, 
+					heartbeat_at = ?,
+					timeout_at = ?,
+					updated_at = ?
+				WHERE id = ? AND status = 'pending'
+			`
 
-		result, err := h.db.Exec(query, processorID, now, now, timeoutAt, now, task.ID)
+			result, err := h.db.Exec(query, processorID, now, now, timeoutAt, now, task.ID)
+			if err != nil {
+				return err
+			}
+
+			if rowsAffected, _ := result.RowsAffected(); rowsAffected == 0 {
+				return fmt.Errorf("task not updated")
+			}
+
+			return nil
+		})
+
 		if err != nil {
-			continue
+			continue // Skip this task if update failed
 		}
 
-		if rowsAffected, _ := result.RowsAffected(); rowsAffected > 0 {
-			// Update task object
-			task.Status = "processing"
-			task.ProcessorID = &processorID
-			task.ProcessingStartedAt = &now
-			task.HeartbeatAt = &now
-			task.TimeoutAt = &timeoutAt
-			task.UpdatedAt = now
+		// Update task object
+		task.Status = "processing"
+		task.ProcessorID = &processorID
+		task.ProcessingStartedAt = &now
+		task.HeartbeatAt = &now
+		task.TimeoutAt = &timeoutAt
+		task.UpdatedAt = now
 
-			claimedTasks = append(claimedTasks, task)
-		}
+		claimedTasks = append(claimedTasks, task)
 	}
 
 	return claimedTasks, nil
@@ -565,72 +607,18 @@ func (h *InternalHandlers) CompleteTasks(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	now := time.Now().UnixMilli()
-
-	// Calculate actual duration - use processor_id if provided for security
-	var actualDuration *int64
-	var query string
-	var args []interface{}
-
-	if req.ProcessorID != nil && *req.ProcessorID != "" {
-		query = `
-			SELECT processing_started_at FROM tasks 
-			WHERE id = ? AND processor_id = ? AND status = 'processing'
-		`
-		args = []interface{}{req.TaskID, *req.ProcessorID}
-	} else {
-		query = `
-			SELECT processing_started_at FROM tasks 
-			WHERE id = ? AND status = 'processing'
-		`
-		args = []interface{}{req.TaskID}
-	}
-
-	var startedAt sql.NullInt64
-	if err := h.db.QueryRow(query, args...).Scan(&startedAt); err == nil && startedAt.Valid {
-		duration := now - startedAt.Int64
-		actualDuration = &duration
-	}
-
-	// Update task - use processor_id constraint if provided
-	var updateQuery string
-	var updateArgs []interface{}
-
-	if req.ProcessorID != nil && *req.ProcessorID != "" {
-		updateQuery = `
-			UPDATE tasks 
-			SET status = ?, result = ?, error_message = ?, completed_at = ?, 
-			    actual_duration = ?, updated_at = ?
-			WHERE id = ? AND processor_id = ? AND status = 'processing'
-		`
-		updateArgs = []interface{}{
-			req.Status, req.Result, req.ErrorMessage,
-			now, actualDuration, now,
-			req.TaskID, *req.ProcessorID,
-		}
-	} else {
-		updateQuery = `
-			UPDATE tasks 
-			SET status = ?, result = ?, error_message = ?, completed_at = ?, 
-			    actual_duration = ?, updated_at = ?
-			WHERE id = ? AND status = 'processing'
-		`
-		updateArgs = []interface{}{
-			req.Status, req.Result, req.ErrorMessage,
-			now, actualDuration, now,
-			req.TaskID,
-		}
-	}
-
-	result, err := h.db.Exec(updateQuery, updateArgs...)
+	// Use the proper UpdateTaskStatus function which has retry logic
+	err := h.db.UpdateTaskStatus(req.TaskID, req.Status, req.Result, req.ErrorMessage)
 
 	if err != nil {
 		utils.SendError(w, http.StatusInternalServerError, "Failed to complete task")
 		return
 	}
 
-	if rowsAffected, _ := result.RowsAffected(); rowsAffected == 0 {
-		utils.SendError(w, http.StatusNotFound, "Task not found or not owned by processor")
+	// Verify task was actually updated (optional additional check)
+	task, taskErr := h.db.GetTask(req.TaskID)
+	if taskErr != nil || task.Status != req.Status {
+		utils.SendError(w, http.StatusNotFound, "Task not found or not updated")
 		return
 	}
 
