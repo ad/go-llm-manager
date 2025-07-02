@@ -16,6 +16,7 @@ import (
 
 	"github.com/ad/go-llm-manager/internal/api/handlers"
 	"github.com/ad/go-llm-manager/internal/auth"
+	"github.com/ad/go-llm-manager/internal/config"
 	"github.com/ad/go-llm-manager/internal/database"
 )
 
@@ -75,7 +76,6 @@ func TestResultPolling_CompletedTask_Integration(t *testing.T) {
 	db := setupTestDB(t)
 	secret := "testsecret"
 	jwtAuth := auth.NewJWTAuth(secret)
-
 	userID := uuid.New().String()
 	payload := &database.JWTPayload{UserID: userID, Issuer: "test", Subject: userID, ExpiresAt: time.Now().Add(time.Hour).Unix(), ProductData: "integration-data"}
 	token, err := jwtAuth.GenerateToken(payload, 3600)
@@ -83,7 +83,8 @@ func TestResultPolling_CompletedTask_Integration(t *testing.T) {
 		t.Fatalf("failed to generate token: %v", err)
 	}
 
-	hCreate := handlers.NewPublicHandlers(db, jwtAuth)
+	cfg := &config.Config{} // Add a default config for testing
+	hCreate := handlers.NewPublicHandlers(db, jwtAuth, cfg)
 	internalHandlers := handlers.NewInternalHandlers(db, jwtAuth)
 	hSSE := handlers.NewSSEHandlers(db, jwtAuth)
 
