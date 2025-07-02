@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/ad/go-llm-manager/internal/auth"
+	"github.com/ad/go-llm-manager/internal/config"
 	"github.com/ad/go-llm-manager/internal/database"
 	"github.com/ad/go-llm-manager/internal/sse"
 	"github.com/ad/go-llm-manager/internal/utils"
@@ -16,12 +18,14 @@ import (
 type PublicHandlers struct {
 	db      *database.DB
 	jwtAuth *auth.JWTAuth
+	config  *config.Config
 }
 
-func NewPublicHandlers(db *database.DB, jwtAuth *auth.JWTAuth) *PublicHandlers {
+func NewPublicHandlers(db *database.DB, jwtAuth *auth.JWTAuth, cfg *config.Config) *PublicHandlers {
 	return &PublicHandlers{
 		db:      db,
 		jwtAuth: jwtAuth,
+		config:  cfg,
 	}
 }
 
@@ -225,6 +229,109 @@ func (h *PublicHandlers) GetResult(w http.ResponseWriter, r *http.Request) {
 
 	if task.CompletedAt != nil {
 		data["processedAt"] = time.Unix(0, *task.CompletedAt*int64(time.Millisecond)).Format(time.RFC3339)
+	}
+
+	utils.SendJSON(w, http.StatusOK, data)
+}
+
+// GET /api/get - Get user's latest task and rate limits (JWT auth required)
+func (h *PublicHandlers) GetUserData(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.SendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Extract JWT from query parameter
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		utils.SendError(w, http.StatusBadRequest, "Missing token parameter")
+		return
+	}
+
+	// Validate JWT token
+	payload, err := h.jwtAuth.ExtractPayloadFromToken(token)
+	if err != nil {
+		utils.SendError(w, http.StatusUnauthorized, "Invalid token")
+		return
+	}
+
+	userID := payload.UserID
+	if userID == "" && payload.Subject != "" {
+		userID = payload.Subject
+	}
+
+	if userID == "" {
+		utils.SendError(w, http.StatusBadRequest, "Invalid token: missing user_id")
+		return
+	}
+
+	// Get user's latest task
+	latestTask, err := h.db.GetUserLatestTask(userID)
+	if err != nil {
+		utils.SendError(w, http.StatusInternalServerError, "Failed to get latest task")
+		return
+	}
+
+	// Get user's rate limits
+	rateLimit, err := h.db.GetUserRateLimit(userID)
+	if err != nil {
+		utils.SendError(w, http.StatusInternalServerError, "Failed to get rate limits")
+		return
+	}
+
+	// Prepare response
+	data := map[string]interface{}{
+		"success": true,
+		"user_id": userID,
+		"rate_limit": map[string]interface{}{
+			"request_count": rateLimit.RequestCount,
+			"request_limit": h.config.RateLimit.MaxRequests,
+			"window_start":  rateLimit.WindowStart,
+			"last_request":  rateLimit.LastRequest,
+			"period_start":  time.Unix(0, rateLimit.WindowStart*int64(time.Millisecond)).Format(time.RFC3339),
+			"period_end":    time.Unix(0, (rateLimit.WindowStart+h.config.RateLimit.WindowMs)*int64(time.Millisecond)).Format(time.RFC3339),
+			// "token_count":   0,     // TODO: implement token counting
+			// "token_limit":   10000, // TODO: get from config
+		},
+	}
+
+	// Add latest task if exists
+	if latestTask != nil {
+		taskData := map[string]interface{}{
+			"id":           latestTask.ID,
+			"status":       latestTask.Status,
+			"product_data": latestTask.ProductData,
+			"priority":     latestTask.Priority,
+			"created_at":   time.Unix(0, latestTask.CreatedAt*int64(time.Millisecond)).Format(time.RFC3339),
+			"updated_at":   time.Unix(0, latestTask.UpdatedAt*int64(time.Millisecond)).Format(time.RFC3339),
+		}
+
+		if latestTask.Result != nil {
+			taskData["result"] = *latestTask.Result
+		}
+		if latestTask.ErrorMessage != nil {
+			taskData["error_message"] = *latestTask.ErrorMessage
+		}
+		if latestTask.CompletedAt != nil {
+			taskData["completed_at"] = time.Unix(0, *latestTask.CompletedAt*int64(time.Millisecond)).Format(time.RFC3339)
+		}
+		if latestTask.ProcessingStartedAt != nil {
+			taskData["processing_started_at"] = time.Unix(0, *latestTask.ProcessingStartedAt*int64(time.Millisecond)).Format(time.RFC3339)
+		}
+		if latestTask.OllamaParams != nil {
+			// Parse ollama_params from JSON string to object
+			var ollamaParams map[string]interface{}
+			if err := json.Unmarshal([]byte(*latestTask.OllamaParams), &ollamaParams); err == nil {
+				taskData["ollama_params"] = ollamaParams
+			} else {
+				// Fallback to string if parsing fails
+				taskData["ollama_params"] = *latestTask.OllamaParams
+			}
+		}
+
+		data["last_task"] = taskData
+	} else {
+		data["last_task"] = nil
 	}
 
 	utils.SendJSON(w, http.StatusOK, data)

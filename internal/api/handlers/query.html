@@ -22,10 +22,16 @@
 <body>
     <div class="container">
         <h2>🚀 SSE Polling Query Demo</h2>
-        <input type="text" id="apiKey" value="dev-internal-key">
-        <p>Демонстрация работы SSE endpoint <code>/api/result-polling</code> с чистым клиентским кодом.</p>
+        <div class="form-row">
+            <input type="text" id="apiKey" value="dev-internal-key" placeholder="API Key (dev-internal-key)">
+        </div>
+        <div class="form-row">
+            <input type="text" id="userId" placeholder="User ID..." value="demo_user_123">
+        </div>
         <div class="form-row">
             <input type="text" id="prompt" placeholder="Введите запрос..." value="Напиши короткое стихотворение про кота">
+        </div>
+        <div class="form-row">
             <select id="model">
                 <option value="gemma3n:e2b-it-q4_K_M">Gemma3n 2B</option>
                 <option value="gemma3:1b">Gemma3 1B</option>
@@ -35,9 +41,10 @@
             </select>
         </div>
         <div style="margin: 15px 0;">
-            <button id="startBtn" class="btn-success">🚀 Запустить SSE</button>
-            <button id="stopBtn" class="btn-danger" disabled>⏹️ Остановить SSE</button>
+            <button id="startBtn" class="btn-success">🚀 Запустить</button>
+            <button id="stopBtn" class="btn-danger" disabled>⏹️ Остановить</button>
             <button id="clearBtn" class="btn-warning">🗑️ Очистить</button>
+            <button onclick="loadUserData()" class="btn-info">📥 Последний запрос</button>
         </div>
         <div id="status" class="result"></div>
         <div id="result" class="result"></div>
@@ -68,6 +75,81 @@
             if (sse) { sse.close(); sse = null; }
             document.getElementById('stopBtn').disabled = true;
             document.getElementById('startBtn').disabled = false;
+        }
+
+        document.getElementById('clearBtn').onclick = clearAll;
+
+        async function loadUserData() {
+            const apiKey = document.getElementById('apiKey').value;
+            const userId = document.getElementById('userId').value;
+            
+            if (!userId) {
+                log('⚠️ Введите User ID для загрузки данных');
+                return;
+            }
+            
+            try {
+                log('🔑 Генерация JWT токена для загрузки данных...');
+                
+                // Генерируем JWT токен специально для получения данных пользователя
+                const tokenResp = await fetch('/api/internal/generate-token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + apiKey
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        product_data: 'temp' // Минимальные данные для генерации токена
+                    })
+                });
+                
+                if (!tokenResp.ok) throw new Error('Ошибка генерации токена');
+                const tokenData = await tokenResp.json();
+                if (!tokenData.success) throw new Error(tokenData.error || 'Ошибка токена');
+                
+                const tempToken = tokenData.token;
+                log('✅ JWT токен для загрузки данных получен');
+                log('📥 Загрузка данных пользователя...');
+                
+                const response = await fetch('/api/get?token=' + encodeURIComponent(tempToken));
+                if (!response.ok) throw new Error('Ошибка загрузки данных');
+                
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Ошибка данных');
+                
+                log('✅ Данные пользователя загружены');
+                
+                // Заполняем поля формы данными последней задачи
+                if (data.last_task) {
+                    const task = data.last_task;
+                    log(`📋 Последняя задача: ID ${task.id}, статус: ${task.status}`);
+                    
+                    // Заполняем промпт и модель, если они есть
+                    if (task.ollama_params) {
+                        if (task.ollama_params.prompt) {
+                            document.getElementById('prompt').value = task.product_data;
+                            log('📝 Заполнен промпт из последней задачи');
+                        }
+                        if (task.ollama_params.model) {
+                            const modelSelect = document.getElementById('model');
+                            if ([...modelSelect.options].some(option => option.value === task.ollama_params.model)) {
+                                modelSelect.value = task.ollama_params.model;
+                                log('🤖 Заполнена модель из последней задачи');
+                            }
+                        }
+                    }
+                }
+                
+                // Показываем информацию о rate limits
+                if (data.rate_limit) {
+                    const rl = data.rate_limit;
+                    log(`📊 Rate limits: Запросы: ${rl.request_count}/${rl.request_limit}`);
+                }
+                
+            } catch (error) {
+                log('❌ Ошибка загрузки данных пользователя: ' + error.message);
+            }
         }
 
         document.getElementById('clearBtn').onclick = clearAll;

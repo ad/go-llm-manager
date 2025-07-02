@@ -25,6 +25,7 @@ manager/
 ## Основные возможности
 - Создание задач через JWT (POST /api/create, параметры только из JWT)
 - Получение результата задачи (POST /api/result, параметры только из JWT)
+- Получение данных пользователя и последней задачи (GET /api/get, JWT через query параметр)
 - SSE polling статуса задачи (`/api/result-polling?token=...`)
 - Встроенный web-интерфейс администратора (`/admin`, `/admin.js`, `/admin.css`)
 - Внутренние API для процессоров: claim, heartbeat, complete, work-stealing, очистка, метрики

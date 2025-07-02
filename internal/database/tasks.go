@@ -329,6 +329,108 @@ func (db *DB) CheckUserActiveTask(userID string) (bool, error) {
 	return count > 0, nil
 }
 
+// GetUserLatestTask gets the latest task for a user (most recent by created_at)
+func (db *DB) GetUserLatestTask(userID string) (*Task, error) {
+	var task Task
+	var ollamaParamsJSON sql.NullString
+	var completedAt, processingStartedAt, heartbeatAt, timeoutAt sql.NullInt64
+	var result, errorMessage, processorID sql.NullString
+	var actualDuration sql.NullInt64
+
+	err := retryOnBusy(3, func() error {
+		query := `
+			SELECT id, user_id, product_data, status, result, error_message,
+				   created_at, updated_at, completed_at, priority, retry_count,
+				   max_retries, processor_id, processing_started_at, heartbeat_at,
+				   timeout_at, ollama_params, estimated_duration, actual_duration
+			FROM tasks 
+			WHERE user_id = ? 
+			ORDER BY created_at DESC 
+			LIMIT 1
+		`
+
+		return db.QueuedQueryRow(query, userID).Scan(
+			&task.ID, &task.UserID, &task.ProductData, &task.Status,
+			&result, &errorMessage, &task.CreatedAt, &task.UpdatedAt,
+			&completedAt, &task.Priority, &task.RetryCount, &task.MaxRetries,
+			&processorID, &processingStartedAt, &heartbeatAt, &timeoutAt,
+			&ollamaParamsJSON, &task.EstimatedDuration, &actualDuration,
+		)
+	})
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // No tasks found for user
+		}
+		return nil, err
+	}
+
+	// Handle nullable fields
+	if result.Valid {
+		task.Result = &result.String
+	}
+	if errorMessage.Valid {
+		task.ErrorMessage = &errorMessage.String
+	}
+	if processorID.Valid {
+		task.ProcessorID = &processorID.String
+	}
+	if completedAt.Valid {
+		task.CompletedAt = &completedAt.Int64
+	}
+	if processingStartedAt.Valid {
+		task.ProcessingStartedAt = &processingStartedAt.Int64
+	}
+	if heartbeatAt.Valid {
+		task.HeartbeatAt = &heartbeatAt.Int64
+	}
+	if timeoutAt.Valid {
+		task.TimeoutAt = &timeoutAt.Int64
+	}
+	if actualDuration.Valid {
+		task.ActualDuration = &actualDuration.Int64
+	}
+
+	// Parse ollama params
+	if ollamaParamsJSON.Valid && ollamaParamsJSON.String != "" {
+		task.OllamaParams = &ollamaParamsJSON.String
+	}
+
+	return &task, nil
+}
+
+// GetUserRateLimit gets current rate limit data for a user
+func (db *DB) GetUserRateLimit(userID string) (*RateLimit, error) {
+	var rl RateLimit
+
+	err := retryOnBusy(3, func() error {
+		query := `
+			SELECT user_id, request_count, window_start, last_request
+			FROM rate_limits 
+			WHERE user_id = ?
+		`
+
+		return db.QueuedQueryRow(query, userID).Scan(
+			&rl.UserID, &rl.RequestCount, &rl.WindowStart, &rl.LastRequest,
+		)
+	})
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// Return empty rate limit if not found
+			return &RateLimit{
+				UserID:       userID,
+				RequestCount: 0,
+				WindowStart:  0,
+				LastRequest:  0,
+			}, nil
+		}
+		return nil, err
+	}
+
+	return &rl, nil
+}
+
 // Helper function to scan task from rows
 func scanTask(rows *sql.Rows) (*Task, error) {
 	var task Task

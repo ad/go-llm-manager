@@ -33,6 +33,9 @@ window.addEventListener('beforeunload', function() {
     if (magicSSEConnection) {
         magicSSEConnection.close();
     }
+    if (ssePollingConnection) {
+        ssePollingConnection.close();
+    }
     if (metricsInterval) {
         clearInterval(metricsInterval);
     }
@@ -111,6 +114,146 @@ async function testConnection() {
             </div>
         `;
         log(`❌ Ошибка подключения: ${error.message}`, 'error');
+    }
+}
+
+async function loadUserData() {
+    try {
+        const baseUrl = document.getElementById('baseUrl').value;
+        const apiKey = document.getElementById('apiKey').value;
+        const userId = document.getElementById('userId').value;
+
+        if (!userId) {
+            log('⚠️ Введите User ID для загрузки данных пользователя', 'warning');
+            return;
+        }
+
+        log('🔑 Генерация JWT токена для загрузки данных...');
+
+        // Генерируем JWT токен специально для получения данных пользователя
+        const tokenResponse = await fetch(`${baseUrl}/api/internal/generate-token`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                user_id: userId,
+                product_data: "temp" // Минимальные данные для генерации токена
+            })
+        });
+
+        if (!tokenResponse.ok) {
+            throw new Error(`Ошибка генерации токена: HTTP ${tokenResponse.status}`);
+        }
+
+        const tokenData = await tokenResponse.json();
+        
+        if (!tokenData.success) {
+            throw new Error(tokenData.error || 'Ошибка генерации токена');
+        }
+
+        const tempToken = tokenData.token;
+        log('✅ JWT токен для загрузки данных получен');
+        log('📥 Загрузка данных пользователя...');
+
+        const response = await fetch(`${baseUrl}/api/get?token=${encodeURIComponent(tempToken)}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error(data.error || 'Ошибка загрузки данных пользователя');
+        }
+
+        log('✅ Данные пользователя загружены');
+
+        // Заполняем поля формы данными последней задачи, если она есть
+        if (data.last_task) {
+            const task = data.last_task;
+            log(`📋 Последняя задача: ID ${task.id}, статус: ${task.status}`);
+            
+            // Заполняем поля, если в задаче есть данные
+            if (task.product_data) {
+                document.getElementById('productData').value = task.product_data;
+                log('📝 Заполнено описание товара из последней задачи');
+            }
+            
+            // Заполняем параметры Ollama, если они есть
+            if (task.ollama_params) {
+                const params = task.ollama_params;
+                if (params.model) {
+                    const modelSelect = document.getElementById('ollamaModel');
+                    if ([...modelSelect.options].some(option => option.value === params.model)) {
+                        modelSelect.value = params.model;
+                        log('🤖 Заполнена модель из последней задачи');
+                    }
+                }
+                if (params.temperature !== undefined) {
+                    document.getElementById('temperature').value = params.temperature;
+                }
+                if (params.max_tokens !== undefined) {
+                    document.getElementById('maxTokens').value = params.max_tokens;
+                }
+                if (params.top_p !== undefined) {
+                    document.getElementById('topP').value = params.top_p;
+                }
+                if (params.top_k !== undefined) {
+                    document.getElementById('topK').value = params.top_k;
+                }
+                if (params.repeat_penalty !== undefined) {
+                    document.getElementById('repeatPenalty').value = params.repeat_penalty;
+                }
+                if (params.seed !== undefined) {
+                    document.getElementById('seed').value = params.seed;
+                }
+                if (params.stop && params.stop.length > 0) {
+                    document.getElementById('stopSequences').value = params.stop.join(', ');
+                }
+                if (params.prompt) {
+                    document.getElementById('promptOverride').value = params.prompt;
+                }
+            }
+        }
+
+        // Отображаем информацию о rate limits
+        if (data.rate_limit) {
+            const rl = data.rate_limit;
+            log(`📊 Rate limits: Запросы: ${rl.request_count}/${rl.request_limit}`);
+            
+            // Показываем информацию о rate limits в интерфейсе
+            let rateLimitInfo = document.getElementById('rateLimitInfo');
+            if (!rateLimitInfo) {
+                // Создаем блок для отображения rate limits, если его нет
+                rateLimitInfo = document.createElement('div');
+                rateLimitInfo.id = 'rateLimitInfo';
+                rateLimitInfo.className = 'result info';
+                rateLimitInfo.style.marginTop = '10px';
+                
+                // Находим место для вставки (после формы создания задачи)
+                const container = document.querySelector('#user-content .container');
+                if (container) {
+                    container.appendChild(rateLimitInfo);
+                }
+            }
+            
+            rateLimitInfo.innerHTML = `
+                <strong>📊 Текущие лимиты пользователя:</strong><br>
+                • Запросы: ${rl.request_count} / ${rl.request_limit}<br>
+                • Период: ${rl.period_start} - ${rl.period_end}
+            `;
+        }
+
+    } catch (error) {
+        log(`❌ Ошибка загрузки данных пользователя: ${error.message}`, 'error');
     }
 }
 
@@ -499,87 +642,87 @@ function startRealtimePolling() {
                 sseReconnectCount = 0; // Сброс счетчика при успешном подключении
             };
 
-    sseConnection.onmessage = function(event) {
-        try {
-            log('🔵 Получено SSE событие: ' + event.data);
-            const data = JSON.parse(event.data);
-            log('🔵 Парсинг успешен, тип события: ' + data.type);
-            log('🔵 Данные события: ' + JSON.stringify(data.data, null, 2));
-            
-            switch(data.type) {
-                case 'heartbeat':
-                    if (data.data.message) {
-                        log('💓 ' + data.data.message);
-                    } else {
-                        log('💓 Heartbeat');
+            sseConnection.onmessage = function(event) {
+                try {
+                    log('🔵 Получено SSE событие: ' + event.data);
+                    const data = JSON.parse(event.data);
+                    log('🔵 Парсинг успешен, тип события: ' + data.type);
+                    log('🔵 Данные события: ' + JSON.stringify(data.data, null, 2));
+                    
+                    switch(data.type) {
+                        case 'heartbeat':
+                            if (data.data.message) {
+                                log('💓 ' + data.data.message);
+                            } else {
+                                log('💓 Heartbeat');
+                            }
+                            break;
+                            
+                        case 'task_status':
+                            log('📊 Статус изменился: ' + data.data.status);
+                            if (data.data.processingStartedAt) {
+                                log('⏰ Обработка началась: ' + new Date(data.data.processingStartedAt).toLocaleString());
+                            }
+                            // Отображаем промежуточный статус
+                            displayTaskStatus(data.data);
+                            break;
+                            
+                        case 'task_completed':
+                            log('🎉 Задача выполнена!');
+                            log('🔵 Данные завершенной задачи: ' + JSON.stringify(data.data, null, 2));
+                            displayTaskResult(data.data);
+                            taskFinalized = true;
+                            stopSSEPolling();
+                            break;
+                            
+                        case 'task_failed':
+                            log('❌ Задача провалена: ' + (data.data.error || 'Неизвестная ошибка'), 'error');
+                            log('🔵 Данные провалившейся задачи: ' + JSON.stringify(data.data, null, 2));
+                            displayTaskResult(data.data);
+                            taskFinalized = true;
+                            stopSSEPolling();
+                            break;
+                            
+                        case 'error':
+                            log('❌ Ошибка SSE: ' + data.data.error, 'error');
+                            if (data.data.shouldReconnect) {
+                                const delay = data.data.reconnectDelay || 5000;
+                                log('🔄 Переподключение через ' + (delay/1000) + ' секунд...');
+                                sseConnection.close();
+                                sseReconnectCount++;
+                                sseReconnectTimeout = setTimeout(connectSSE, delay);
+                            } else {
+                                sseConnection.close();
+                                sseConnection = null;
+                                realtimeBtn.disabled = false;
+                                stopBtn.disabled = true;
+                            }
+                            break;
+                            
+                        default:
+                            log('📝 Неизвестное SSE событие: ' + data.type);
+                            log('🔵 Данные неизвестного события: ' + JSON.stringify(data, null, 2));
                     }
-                    break;
-                    
-                case 'task_status':
-                    log('📊 Статус изменился: ' + data.data.status);
-                    if (data.data.processingStartedAt) {
-                        log('⏰ Обработка началась: ' + new Date(data.data.processingStartedAt).toLocaleString());
-                    }
-                    // Отображаем промежуточный статус
-                    displayTaskStatus(data.data);
-                    break;
-                    
-                case 'task_completed':
-                    log('🎉 Задача выполнена!');
-                    log('🔵 Данные завершенной задачи: ' + JSON.stringify(data.data, null, 2));
-                    displayTaskResult(data.data);
-                    taskFinalized = true;
-                    stopSSEPolling();
-                    break;
-                    
-                case 'task_failed':
-                    log('❌ Задача провалена: ' + (data.data.error || 'Неизвестная ошибка'), 'error');
-                    log('🔵 Данные провалившейся задачи: ' + JSON.stringify(data.data, null, 2));
-                    displayTaskResult(data.data);
-                    taskFinalized = true;
-                    stopSSEPolling();
-                    break;
-                    
-                case 'error':
-                    log('❌ Ошибка SSE: ' + data.data.error, 'error');
-                    if (data.data.shouldReconnect) {
-                        const delay = data.data.reconnectDelay || 5000;
-                        log('🔄 Переподключение через ' + (delay/1000) + ' секунд...');
-                        sseConnection.close();
-                        sseReconnectCount++;
-                        sseReconnectTimeout = setTimeout(connectSSE, delay);
-                    } else {
-                        sseConnection.close();
-                        sseConnection = null;
-                        realtimeBtn.disabled = false;
-                        stopBtn.disabled = true;
-                    }
-                    break;
-                    
-                default:
-                    log('📝 Неизвестное SSE событие: ' + data.type);
-                    log('🔵 Данные неизвестного события: ' + JSON.stringify(data, null, 2));
-            }
-        } catch (error) {
-            log('❌ Ошибка парсинга SSE данных: ' + error.message, 'error');
-            log('🔵 Сырые данные события: ' + event.data);
-        }
-    };
+                } catch (error) {
+                    log('❌ Ошибка парсинга SSE данных: ' + error.message, 'error');
+                    log('🔵 Сырые данные события: ' + event.data);
+                }
+            };
 
-    sseConnection.onerror = function(event) {
-        // Не пытаемся переподключиться, если задача уже завершена
-        if (taskFinalized) {
-            log('ℹ️ Соединение закрыто после завершения задачи');
-            return;
-        }
-        
-        log('❌ Ошибка SSE соединения, попытка переподключения через 5 секунд...', 'error');
-        if (sseConnection) {
-            sseConnection.close();
-            sseReconnectCount++;
-            sseReconnectTimeout = setTimeout(connectSSE, 5000);
-        }
-    };
+            sseConnection.onerror = function(event) {
+                // Не пытаемся переподключиться, если задача уже завершена
+                if (taskFinalized) {
+                    log('ℹ️ Соединение закрыто после завершения задачи');
+                    return;
+                }
+                
+                log('❌ Ошибка SSE соединения, попытка переподключения через 5 секунд...', 'error');
+                if (sseConnection) {
+                    sseConnection.close();
+                    sseReconnectCount++;
+                    sseReconnectTimeout = setTimeout(connectSSE, 5000);
+                }
+            };
         }
 
         // Сброс счетчика при старте
@@ -1230,7 +1373,6 @@ function startSSEPollingDemo() {
         return;
     }
 
-    const model = document.getElementById('ssePollingModel').value;
     const btn = document.getElementById('ssePollingBtn');
     const stopBtn = document.getElementById('stopSSEPollingBtn');
     
@@ -1384,6 +1526,7 @@ function resetSSEPollingUI() {
     document.getElementById('ssePollingPrompt').disabled = false;
     ssePollingTaskId = null;
     ssePollingConnection = null;
+    ssePollingTaskCompleted = true;
 }
 
 function showSSEPollingStatus(type, message) {
@@ -1636,4 +1779,3 @@ function displayAllTasks(tasks) {
         container.appendChild(taskEl);
     });
 }
-

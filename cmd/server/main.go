@@ -40,7 +40,7 @@ func main() {
 	apiKeyAuth := auth.NewAPIKeyManager(cfg.Auth.InternalAPIKey)
 
 	// Initialize handlers
-	publicHandlers := handlers.NewPublicHandlers(db, jwtAuth)
+	publicHandlers := handlers.NewPublicHandlers(db, jwtAuth, cfg)
 	internalHandlers := handlers.NewInternalHandlers(db, jwtAuth)
 	sseHandlers := handlers.NewSSEHandlers(db, jwtAuth)
 
@@ -97,6 +97,13 @@ func main() {
 
 	mux.Handle("/api/result", middleware.Chain(
 		http.HandlerFunc(publicHandlers.GetResult),
+		middleware.Logging,
+		middleware.CORS,
+		middleware.ContentType,
+	))
+
+	mux.Handle("/api/get", middleware.Chain(
+		http.HandlerFunc(publicHandlers.GetUserData),
 		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
@@ -227,18 +234,18 @@ func main() {
 		Addr:    addr,
 		Handler: mux,
 		// Security timeouts
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	// Start server in goroutine
-	go func() {
+	go func(version string) {
 		log.Printf("Starting server v.%s on %s\n", version, addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed to start: %v", err)
 		}
-	}()
+	}(version)
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)

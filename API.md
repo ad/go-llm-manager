@@ -5,7 +5,7 @@
 `manager` — сервис управления задачами, пользователями, API, аутентификацией и административным интерфейсом для платформы go-llm. Все публичные и внутренние API реализованы через HTTP/JSON. Аутентификация — через JWT или API-ключ.
 
 ## Аутентификация
-- **JWT**: для публичных эндпоинтов (`/api/create`, `/api/result`, SSE polling). Передаётся в заголовке `Authorization: Bearer <token>`.
+- **JWT**: для публичных эндпоинтов (`/api/create`, `/api/result`, `/api/get`, SSE polling). Передаётся в заголовке `Authorization: Bearer <token>` или в query-параметре `token`.
 - **API-ключ**: для внутренних эндпоинтов (`/api/internal/*`). Передаётся в заголовке `Authorization: Bearer <key>`.
 
 ## Коды ошибок
@@ -66,7 +66,38 @@
 }
 ```
 
-### 4. Получение статуса задачи (SSE polling)
+### 4. Получение данных пользователя и последней задачи (GET /api/get)
+- JWT передаётся в query-параметре `token` (например: `/api/get?token=...`)
+- Возвращает данные о пользователе, лимитах запросов и последней задаче.
+- Ответ:
+```json
+{
+  "success": true,
+  "user_id": "user-123",
+  "rate_limit": {
+    "request_count": 5,
+    "request_limit": 100,
+    "window_start": 1719360000000,
+    "last_request": 1719400000000,
+    "period_start": "2024-06-26T00:00:00Z",
+    "period_end": "2024-06-27T00:00:00Z"
+  },
+  "last_task": {
+    "id": "task-456",
+    "status": "completed",
+    "product_data": "...",
+    "priority": 0,
+    "result": "...",
+    "created_at": "2024-06-26T12:00:00Z",
+    "updated_at": "2024-06-26T12:05:00Z",
+    "completed_at": "2024-06-26T12:05:00Z",
+    "processing_started_at": "2024-06-26T12:02:00Z",
+    "ollama_params": { "model": "llama3", "prompt": "..." }
+  }
+}
+```
+
+### 5. Получение статуса задачи (SSE polling)
 - `GET /api/result-polling?token=...`
   - Требуется JWT-токен задачи (тот, что возвращается при создании задачи).
   - SSE-соединение, события приходят по мере изменения статуса задачи.
@@ -89,7 +120,7 @@
   - Форматы событий см. internal/database/models.go (SSEEventTaskStatus, SSEEventTaskCompleted и др.).
 
 
-#### 5. HTML-страницы
+#### 6. HTML-страницы
 - `GET /admin` — HTML-страница для администрирования.
 - `GET /query` — HTML-страница для тестирования SSE polling.
 
