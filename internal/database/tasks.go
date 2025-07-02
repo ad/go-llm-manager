@@ -8,6 +8,23 @@ import (
 
 // Task operations
 
+// retryOnBusy executes a function with retry logic for SQLite BUSY errors
+func retryOnBusy(maxRetries int, fn func() error) error {
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		err = fn()
+		if err == nil {
+			return nil
+		}
+
+		// Check if it's a busy error and retry
+		if i < maxRetries-1 {
+			time.Sleep(time.Duration(i+1) * 10 * time.Millisecond) // Exponential backoff
+		}
+	}
+	return err
+}
+
 func (db *DB) CreateTask(task *Task) error {
 	// Check if user already has an active task
 	hasActiveTask, err := db.CheckUserActiveTask(task.UserID)
@@ -209,60 +226,63 @@ func (db *DB) GetAllTasks(userID *string, limit, offset int) ([]*Task, error) {
 // Rate limiting operations
 
 func (db *DB) CheckRateLimit(userID string, windowMs int64, maxRequests int) (*RateLimit, error) {
-	now := time.Now().UnixMilli()
-	windowStart := now - windowMs
-
-	query := `
-		SELECT user_id, request_count, window_start, last_request
-		FROM rate_limits 
-		WHERE user_id = ?
-	`
-
 	var rl RateLimit
-	err := db.QueryRow(query, userID).Scan(
-		&rl.UserID, &rl.RequestCount, &rl.WindowStart, &rl.LastRequest,
-	)
 
-	if err == sql.ErrNoRows {
-		// First request for this user
-		rl = RateLimit{
-			UserID:       userID,
-			RequestCount: 1,
-			WindowStart:  now,
-			LastRequest:  now,
+	err := retryOnBusy(3, func() error {
+		now := time.Now().UnixMilli()
+		windowStart := now - windowMs
+
+		// Try to get existing rate limit
+		query := `
+			SELECT user_id, request_count, window_start, last_request
+			FROM rate_limits 
+			WHERE user_id = ?
+		`
+
+		err := db.QueryRow(query, userID).Scan(
+			&rl.UserID, &rl.RequestCount, &rl.WindowStart, &rl.LastRequest,
+		)
+
+		if err == sql.ErrNoRows {
+			// First request for this user - use UPSERT
+			rl = RateLimit{
+				UserID:       userID,
+				RequestCount: 1,
+				WindowStart:  now,
+				LastRequest:  now,
+			}
+		} else if err != nil {
+			return fmt.Errorf("failed to query rate limit for user %s: %w", userID, err)
+		} else {
+			// Existing user - check if window has expired
+			if rl.WindowStart < windowStart {
+				// Reset window
+				rl.RequestCount = 1
+				rl.WindowStart = now
+				rl.LastRequest = now
+			} else {
+				// Increment count
+				rl.RequestCount++
+				rl.LastRequest = now
+			}
 		}
 
-		insertQuery := `
+		// Use UPSERT to handle concurrent requests safely
+		upsertQuery := `
 			INSERT INTO rate_limits (user_id, request_count, window_start, last_request)
 			VALUES (?, ?, ?, ?)
+			ON CONFLICT(user_id) DO UPDATE SET
+				request_count = excluded.request_count,
+				window_start = excluded.window_start,
+				last_request = excluded.last_request
 		`
-		_, err = db.Exec(insertQuery, rl.UserID, rl.RequestCount, rl.WindowStart, rl.LastRequest)
-		return &rl, err
-	}
+		_, err = db.Exec(upsertQuery, rl.UserID, rl.RequestCount, rl.WindowStart, rl.LastRequest)
+		if err != nil {
+			return fmt.Errorf("failed to upsert rate limit for user %s: %w", userID, err)
+		}
 
-	if err != nil {
-		return nil, err
-	}
-
-	// Check if window has expired
-	if rl.WindowStart < windowStart {
-		// Reset window
-		rl.RequestCount = 1
-		rl.WindowStart = now
-		rl.LastRequest = now
-	} else {
-		// Increment count
-		rl.RequestCount++
-		rl.LastRequest = now
-	}
-
-	// Update database
-	updateQuery := `
-		UPDATE rate_limits 
-		SET request_count = ?, window_start = ?, last_request = ?
-		WHERE user_id = ?
-	`
-	_, err = db.Exec(updateQuery, rl.RequestCount, rl.WindowStart, rl.LastRequest, userID)
+		return nil
+	})
 
 	return &rl, err
 }

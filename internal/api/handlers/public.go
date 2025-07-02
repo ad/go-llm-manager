@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -35,6 +36,7 @@ func SetSSEManager(m *sse.Manager) {
 func (h *PublicHandlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	data := map[string]interface{}{
 		"message": "LLM Proxy API v1.0",
+		"status":  "ok",
 		"endpoints": map[string]interface{}{
 			"api": map[string]string{
 				"create":   "/api/create - Create task (JWT)",
@@ -91,11 +93,13 @@ func (h *PublicHandlers) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 	rateLimit, err := h.db.CheckRateLimit(userID, windowMs, maxRequests)
 	if err != nil {
+		log.Printf("Failed to check rate limit for user %s (window: %d ms, max: %d): %v", userID, windowMs, maxRequests, err)
 		utils.SendError(w, http.StatusInternalServerError, "Failed to check rate limit")
 		return
 	}
 
 	if rateLimit.RequestCount > maxRequests {
+		log.Printf("Rate limit exceeded for user %s: %d requests in %d ms", userID, rateLimit.RequestCount, windowMs)
 		utils.SendError(w, http.StatusTooManyRequests, "Rate limit exceeded")
 		return
 	}
