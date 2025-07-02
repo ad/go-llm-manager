@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -17,44 +18,61 @@ func retryOnBusy(maxRetries int, fn func() error) error {
 			return nil
 		}
 
-		// Check if it's a busy error and retry
+		// Check if it's a SQLite BUSY error and retry
 		if i < maxRetries-1 {
-			time.Sleep(time.Duration(i+1) * 10 * time.Millisecond) // Exponential backoff
+			errStr := strings.ToLower(err.Error())
+			isBusyError := strings.Contains(errStr, "database is locked") ||
+				strings.Contains(errStr, "database table is locked") ||
+				strings.Contains(errStr, "busy") ||
+				strings.Contains(errStr, "sqlite_busy") ||
+				strings.Contains(errStr, "locked")
+
+			if isBusyError {
+				// Exponential backoff with jitter for BUSY errors
+				baseDelay := time.Duration(i+1) * 100 * time.Millisecond
+				jitter := time.Duration(i*50) * time.Millisecond
+				time.Sleep(baseDelay + jitter)
+				continue
+			}
+			// For other errors, also retry but with less delay
+			time.Sleep(time.Duration(i+1) * 20 * time.Millisecond)
 		}
 	}
 	return err
 }
 
 func (db *DB) CreateTask(task *Task) error {
-	// Check if user already has an active task
-	hasActiveTask, err := db.CheckUserActiveTask(task.UserID)
-	if err != nil {
+	return retryOnBusy(5, func() error { // Добавляем retry для создания задач
+		// Check if user already has an active task
+		hasActiveTask, err := db.CheckUserActiveTask(task.UserID)
+		if err != nil {
+			return err
+		}
+
+		if hasActiveTask {
+			return fmt.Errorf("user already has an active task")
+		}
+
+		query := `
+			INSERT INTO tasks (
+				id, user_id, product_data, status, created_at, updated_at, 
+				priority, max_retries, estimated_duration, ollama_params
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`
+
+		now := time.Now().UnixMilli()
+		ollamaParamsJSON := ""
+		if task.OllamaParams != nil {
+			ollamaParamsJSON = *task.OllamaParams
+		}
+
+		_, err = db.Exec(query,
+			task.ID, task.UserID, task.ProductData, task.Status,
+			now, now, task.Priority, task.MaxRetries,
+			task.EstimatedDuration, ollamaParamsJSON,
+		)
 		return err
-	}
-
-	if hasActiveTask {
-		return fmt.Errorf("user already has an active task")
-	}
-
-	query := `
-		INSERT INTO tasks (
-			id, user_id, product_data, status, created_at, updated_at, 
-			priority, max_retries, estimated_duration, ollama_params
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`
-
-	now := time.Now().UnixMilli()
-	ollamaParamsJSON := ""
-	if task.OllamaParams != nil {
-		ollamaParamsJSON = *task.OllamaParams
-	}
-
-	_, err = db.Exec(query,
-		task.ID, task.UserID, task.ProductData, task.Status,
-		now, now, task.Priority, task.MaxRetries,
-		task.EstimatedDuration, ollamaParamsJSON,
-	)
-	return err
+	})
 }
 
 func (db *DB) GetTask(id string) (*Task, error) {
@@ -119,16 +137,18 @@ func (db *DB) GetTask(id string) (*Task, error) {
 }
 
 func (db *DB) UpdateTaskStatus(id, status string, result, errorMessage *string) error {
-	query := `
-		UPDATE tasks 
-		SET status = ?, updated_at = ?, result = ?, error_message = ?,
-		    completed_at = CASE WHEN ? IN ('completed', 'failed') THEN ? ELSE completed_at END
-		WHERE id = ?
-	`
+	return retryOnBusy(5, func() error {
+		query := `
+			UPDATE tasks 
+			SET status = ?, updated_at = ?, result = ?, error_message = ?,
+				completed_at = CASE WHEN ? IN ('completed', 'failed') THEN ? ELSE completed_at END
+			WHERE id = ?
+		`
 
-	now := time.Now().UnixMilli()
-	_, err := db.Exec(query, status, now, result, errorMessage, status, now, id)
-	return err
+		now := time.Now().UnixMilli()
+		_, err := db.Exec(query, status, now, result, errorMessage, status, now, id)
+		return err
+	})
 }
 
 func (db *DB) GetPendingTasks(limit int) ([]*Task, error) {
@@ -228,7 +248,7 @@ func (db *DB) GetAllTasks(userID *string, limit, offset int) ([]*Task, error) {
 func (db *DB) CheckRateLimit(userID string, windowMs int64, maxRequests int) (*RateLimit, error) {
 	var rl RateLimit
 
-	err := retryOnBusy(3, func() error {
+	err := retryOnBusy(10, func() error { // Увеличиваем до 10 попыток для rate limit
 		now := time.Now().UnixMilli()
 		windowStart := now - windowMs
 
@@ -289,14 +309,17 @@ func (db *DB) CheckRateLimit(userID string, windowMs int64, maxRequests int) (*R
 
 // CheckUserActiveTask checks if user has any active (pending or processing) tasks
 func (db *DB) CheckUserActiveTask(userID string) (bool, error) {
-	query := `
-		SELECT COUNT(*) 
-		FROM tasks 
-		WHERE user_id = ? AND status IN ('pending', 'processing')
-	`
-
 	var count int
-	err := db.QueryRow(query, userID).Scan(&count)
+	err := retryOnBusy(3, func() error {
+		query := `
+			SELECT COUNT(*) 
+			FROM tasks 
+			WHERE user_id = ? AND status IN ('pending', 'processing')
+		`
+
+		return db.QueryRow(query, userID).Scan(&count)
+	})
+
 	if err != nil {
 		return false, err
 	}
@@ -359,34 +382,36 @@ func scanTask(rows *sql.Rows) (*Task, error) {
 }
 
 func (db *DB) RequeueTask(taskID, processorID string, reason *string) error {
-	var query string
-	var args []interface{}
-	if reason != nil {
-		query = `
-			UPDATE tasks
-			SET status = 'pending',
-			    processor_id = NULL,
-			    heartbeat_at = NULL,
-			    processing_started_at = NULL,
-			    timeout_at = NULL,
-			    retry_count = retry_count + 1,
-			    error_message = ?
-			WHERE id = ? AND processor_id = ? AND status = 'processing'
-		`
-		args = []interface{}{*reason, taskID, processorID}
-	} else {
-		query = `
-			UPDATE tasks
-			SET status = 'pending',
-			    processor_id = NULL,
-			    heartbeat_at = NULL,
-			    processing_started_at = NULL,
-			    timeout_at = NULL,
-			    retry_count = retry_count + 1
-			WHERE id = ? AND processor_id = ? AND status = 'processing'
-		`
-		args = []interface{}{taskID, processorID}
-	}
-	_, err := db.Exec(query, args...)
-	return err
+	return retryOnBusy(3, func() error {
+		var query string
+		var args []interface{}
+		if reason != nil {
+			query = `
+				UPDATE tasks
+				SET status = 'pending',
+					processor_id = NULL,
+					heartbeat_at = NULL,
+					processing_started_at = NULL,
+					timeout_at = NULL,
+					retry_count = retry_count + 1,
+					error_message = ?
+				WHERE id = ? AND processor_id = ? AND status = 'processing'
+			`
+			args = []interface{}{*reason, taskID, processorID}
+		} else {
+			query = `
+				UPDATE tasks
+				SET status = 'pending',
+					processor_id = NULL,
+					heartbeat_at = NULL,
+					processing_started_at = NULL,
+					timeout_at = NULL,
+					retry_count = retry_count + 1
+				WHERE id = ? AND processor_id = ? AND status = 'processing'
+			`
+			args = []interface{}{taskID, processorID}
+		}
+		_, err := db.Exec(query, args...)
+		return err
+	})
 }
