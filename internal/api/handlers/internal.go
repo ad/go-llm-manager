@@ -611,6 +611,7 @@ func (h *InternalHandlers) CompleteTasks(w http.ResponseWriter, r *http.Request)
 	err := h.db.UpdateTaskStatus(req.TaskID, req.Status, req.Result, req.ErrorMessage)
 
 	if err != nil {
+		log.Printf("[COMPLETE ERROR] Failed to update task %s: %v\n", req.TaskID, err)
 		utils.SendError(w, http.StatusInternalServerError, "Failed to complete task")
 		return
 	}
@@ -618,6 +619,7 @@ func (h *InternalHandlers) CompleteTasks(w http.ResponseWriter, r *http.Request)
 	// Verify task was actually updated (optional additional check)
 	task, taskErr := h.db.GetTask(req.TaskID)
 	if taskErr != nil || task.Status != req.Status {
+		log.Printf("[COMPLETE ERROR] Task %s not found or not updated: %v\n", req.TaskID, taskErr)
 		utils.SendError(w, http.StatusNotFound, "Task not found or not updated")
 		return
 	}
@@ -659,6 +661,7 @@ func (h *InternalHandlers) CleanupStats(w http.ResponseWriter, r *http.Request) 
 
 	stats, err := h.getCleanupStats()
 	if err != nil {
+		log.Printf("[CLEANUP STATS ERROR] %v\n", err)
 		utils.SendError(w, http.StatusInternalServerError, "Failed to get cleanup stats")
 		return
 	}
