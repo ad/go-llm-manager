@@ -42,7 +42,7 @@ func retryOnBusy(maxRetries int, fn func() error) error {
 }
 
 func (db *DB) CreateTask(task *Task) error {
-	return retryOnBusy(5, func() error { // Добавляем retry для создания задач
+	return retryOnBusy(3, func() error { // Reduced retries since we have queue now
 		// Check if user already has an active task
 		hasActiveTask, err := db.CheckUserActiveTask(task.UserID)
 		if err != nil {
@@ -66,7 +66,7 @@ func (db *DB) CreateTask(task *Task) error {
 			ollamaParamsJSON = *task.OllamaParams
 		}
 
-		_, err = db.Exec(query,
+		_, err = db.QueuedExec(query,
 			task.ID, task.UserID, task.ProductData, task.Status,
 			now, now, task.Priority, task.MaxRetries,
 			task.EstimatedDuration, ollamaParamsJSON,
@@ -91,7 +91,7 @@ func (db *DB) GetTask(id string) (*Task, error) {
 			FROM tasks WHERE id = ?
 		`
 
-		return db.QueryRow(query, id).Scan(
+		return db.QueuedQueryRow(query, id).Scan(
 			&task.ID, &task.UserID, &task.ProductData, &task.Status,
 			&result, &errorMessage, &task.CreatedAt, &task.UpdatedAt,
 			&completedAt, &task.Priority, &task.RetryCount, &task.MaxRetries,
@@ -139,7 +139,7 @@ func (db *DB) GetTask(id string) (*Task, error) {
 }
 
 func (db *DB) UpdateTaskStatus(id, status string, result, errorMessage *string) error {
-	return retryOnBusy(5, func() error {
+	return retryOnBusy(3, func() error {
 		query := `
 			UPDATE tasks 
 			SET status = ?, updated_at = ?, result = ?, error_message = ?,
@@ -148,7 +148,7 @@ func (db *DB) UpdateTaskStatus(id, status string, result, errorMessage *string) 
 		`
 
 		now := time.Now().UnixMilli()
-		_, err := db.Exec(query, status, now, result, errorMessage, status, now, id)
+		_, err := db.QueuedExecWithWriteLock(query, status, now, result, errorMessage, status, now, id)
 		return err
 	})
 }
@@ -165,7 +165,7 @@ func (db *DB) GetPendingTasks(limit int) ([]*Task, error) {
 		LIMIT ?
 	`
 
-	rows, err := db.Query(query, limit)
+	rows, err := db.QueuedQuery(query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +250,7 @@ func (db *DB) GetAllTasks(userID *string, limit, offset int) ([]*Task, error) {
 func (db *DB) CheckRateLimit(userID string, windowMs int64, maxRequests int) (*RateLimit, error) {
 	var rl RateLimit
 
-	err := retryOnBusy(10, func() error { // Увеличиваем до 10 попыток для rate limit
+	err := retryOnBusy(5, func() error { // Reduced retries since we have queue now
 		now := time.Now().UnixMilli()
 		windowStart := now - windowMs
 
@@ -261,7 +261,7 @@ func (db *DB) CheckRateLimit(userID string, windowMs int64, maxRequests int) (*R
 			WHERE user_id = ?
 		`
 
-		err := db.QueryRow(query, userID).Scan(
+		err := db.QueuedQueryRow(query, userID).Scan(
 			&rl.UserID, &rl.RequestCount, &rl.WindowStart, &rl.LastRequest,
 		)
 
@@ -289,7 +289,7 @@ func (db *DB) CheckRateLimit(userID string, windowMs int64, maxRequests int) (*R
 			}
 		}
 
-		// Use UPSERT to handle concurrent requests safely
+		// Use UPSERT to handle concurrent requests safely - with write lock for safety
 		upsertQuery := `
 			INSERT INTO rate_limits (user_id, request_count, window_start, last_request)
 			VALUES (?, ?, ?, ?)
@@ -298,7 +298,7 @@ func (db *DB) CheckRateLimit(userID string, windowMs int64, maxRequests int) (*R
 				window_start = excluded.window_start,
 				last_request = excluded.last_request
 		`
-		_, err = db.Exec(upsertQuery, rl.UserID, rl.RequestCount, rl.WindowStart, rl.LastRequest)
+		_, err = db.QueuedExecWithWriteLock(upsertQuery, rl.UserID, rl.RequestCount, rl.WindowStart, rl.LastRequest)
 		if err != nil {
 			return fmt.Errorf("failed to upsert rate limit for user %s: %w", userID, err)
 		}
@@ -319,7 +319,7 @@ func (db *DB) CheckUserActiveTask(userID string) (bool, error) {
 			WHERE user_id = ? AND status IN ('pending', 'processing')
 		`
 
-		return db.QueryRow(query, userID).Scan(&count)
+		return db.QueuedQueryRow(query, userID).Scan(&count)
 	})
 
 	if err != nil {
@@ -413,7 +413,7 @@ func (db *DB) RequeueTask(taskID, processorID string, reason *string) error {
 			`
 			args = []interface{}{taskID, processorID}
 		}
-		_, err := db.Exec(query, args...)
+		_, err := db.QueuedExecWithWriteLock(query, args...)
 		return err
 	})
 }

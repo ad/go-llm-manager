@@ -302,7 +302,7 @@ func (h *InternalHandlers) claimTasksBatch(processorID string, batchSize int, ti
 
 	for _, task := range tasks {
 		// Update task to processing with retry logic
-		err := retryOnBusy(5, func() error {
+		err := retryOnBusy(3, func() error {
 			query := `
 				UPDATE tasks 
 				SET status = 'processing', 
@@ -314,7 +314,7 @@ func (h *InternalHandlers) claimTasksBatch(processorID string, batchSize int, ti
 				WHERE id = ? AND status = 'pending'
 			`
 
-			result, err := h.db.Exec(query, processorID, now, now, timeoutAt, now, task.ID)
+			result, err := h.db.QueuedExecWithWriteLock(query, processorID, now, now, timeoutAt, now, task.ID)
 			if err != nil {
 				return err
 			}

@@ -1,16 +1,60 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
 
+// RequestQueue manages database requests to prevent BUSY errors
+type RequestQueue struct {
+	mutex     sync.Mutex
+	semaphore chan struct{}
+}
+
+// NewRequestQueue creates a new request queue with specified concurrency limit
+func NewRequestQueue(maxConcurrency int) *RequestQueue {
+	return &RequestQueue{
+		semaphore: make(chan struct{}, maxConcurrency),
+	}
+}
+
+// Execute runs a function with controlled concurrency
+func (rq *RequestQueue) Execute(ctx context.Context, fn func() error) error {
+	// Try to acquire semaphore with context timeout
+	select {
+	case rq.semaphore <- struct{}{}:
+		defer func() { <-rq.semaphore }()
+		return fn()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// ExecuteWithWriteLock runs a function with exclusive write access
+func (rq *RequestQueue) ExecuteWithWriteLock(ctx context.Context, fn func() error) error {
+	// For critical write operations, use mutex for exclusive access
+	rq.mutex.Lock()
+	defer rq.mutex.Unlock()
+
+	select {
+	case rq.semaphore <- struct{}{}:
+		defer func() { <-rq.semaphore }()
+		return fn()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 type DB struct {
 	*sql.DB
+	requestQueue *RequestQueue
 }
 
 func NewSQLiteDB(dbPath string) (*DB, error) {
@@ -26,16 +70,20 @@ func NewSQLiteDB(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Set connection pool settings
-	sqlDB.SetMaxOpenConns(10)
-	sqlDB.SetMaxIdleConns(5)
+	// Set connection pool settings - reduced for better control
+	sqlDB.SetMaxOpenConns(5)
+	sqlDB.SetMaxIdleConns(3)
+	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 
 	// Test connection
 	if err := sqlDB.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	db := &DB{DB: sqlDB}
+	db := &DB{
+		DB:           sqlDB,
+		requestQueue: NewRequestQueue(3), // Allow max 3 concurrent DB operations
+	}
 
 	// Enable foreign keys and other SQLite optimizations
 	if err := db.initSQLite(); err != nil {
@@ -52,6 +100,9 @@ func (db *DB) initSQLite() error {
 		"PRAGMA synchronous = NORMAL",
 		"PRAGMA cache_size = 1000",
 		"PRAGMA temp_store = MEMORY",
+		"PRAGMA busy_timeout = 30000", // 30 seconds timeout for BUSY
+		"PRAGMA wal_autocheckpoint = 1000",
+		"PRAGMA wal_checkpoint(TRUNCATE)", // Clean up WAL file
 	}
 
 	for _, pragma := range pragmas {
@@ -146,4 +197,68 @@ func (db *DB) RunMigrations() error {
 
 	_, err := db.Exec(migrationSQL)
 	return err
+}
+
+// QueuedQuery executes a SELECT query through the request queue
+func (db *DB) QueuedQuery(query string, args ...interface{}) (*sql.Rows, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var rows *sql.Rows
+	var err error
+
+	err = db.requestQueue.Execute(ctx, func() error {
+		rows, err = db.Query(query, args...)
+		return err
+	})
+
+	return rows, err
+}
+
+// QueuedQueryRow executes a SELECT query for a single row through the request queue
+func (db *DB) QueuedQueryRow(query string, args ...interface{}) *sql.Row {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var row *sql.Row
+
+	// For QueryRow, we don't need to handle error here as it's returned by Scan()
+	db.requestQueue.Execute(ctx, func() error {
+		row = db.QueryRow(query, args...)
+		return nil
+	})
+
+	return row
+}
+
+// QueuedExec executes an INSERT/UPDATE/DELETE query through the request queue
+func (db *DB) QueuedExec(query string, args ...interface{}) (sql.Result, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var result sql.Result
+	var err error
+
+	err = db.requestQueue.Execute(ctx, func() error {
+		result, err = db.Exec(query, args...)
+		return err
+	})
+
+	return result, err
+}
+
+// QueuedExecWithWriteLock executes a critical write operation with exclusive access
+func (db *DB) QueuedExecWithWriteLock(query string, args ...interface{}) (sql.Result, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var result sql.Result
+	var err error
+
+	err = db.requestQueue.ExecuteWithWriteLock(ctx, func() error {
+		result, err = db.Exec(query, args...)
+		return err
+	})
+
+	return result, err
 }
