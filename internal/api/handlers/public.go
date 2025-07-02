@@ -329,6 +329,24 @@ func (h *PublicHandlers) GetUserData(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// If task is active (processing or pending), generate result token
+		if latestTask.Status == "processing" || latestTask.Status == "pending" {
+			resultPayload := &database.JWTPayload{
+				Issuer:   "llm-proxy",
+				Audience: "llm-proxy-api",
+				Subject:  userID,
+				UserID:   userID,
+				TaskID:   latestTask.ID,
+			}
+
+			resultToken, err := h.jwtAuth.GenerateToken(resultPayload, 3600) // 1 hour
+			if err != nil {
+				log.Printf("Failed to generate result token for task %s: %v", latestTask.ID, err)
+			} else {
+				taskData["token"] = resultToken
+			}
+		}
+
 		data["last_task"] = taskData
 	} else {
 		data["last_task"] = nil

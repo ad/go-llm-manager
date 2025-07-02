@@ -5,6 +5,8 @@ defaultPlatforms:
 builds:
 - id: app
   main: .
+  env:
+  - BUILD_VERSION
   ldflags:
   - "-s"
   - "-w"

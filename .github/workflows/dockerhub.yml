@@ -39,4 +39,5 @@ jobs:
           KO_DOCKER_REPO: ${{ secrets.DOCKER_USER }}
           BUILD_VERSION: ${{ steps.set_var.outputs.version }}
         run: |
+          echo "Building with version: $BUILD_VERSION"
           ko build ./cmd/server --base-import-paths --sbom=none --tags="$BUILD_VERSION,latest"

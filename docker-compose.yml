@@ -2,6 +2,8 @@ services:
   worker-dev:
     build: 
       dockerfile: Dockerfile.dev
+      args:
+        BUILD_VERSION: dev-compose
     ports:
       - "8080:8080"
     environment:
@@ -12,6 +14,7 @@ services:
       - INTERNAL_API_KEY=dev-internal-key
       - RATE_LIMIT_REQUESTS=1000
       - RATE_LIMIT_WINDOW=60
+      - BUILD_VERSION=dev-compose
     volumes:
       - .:/app
       - worker_dev_data:/data

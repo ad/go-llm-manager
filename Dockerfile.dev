@@ -1,6 +1,9 @@
 # Development Dockerfile
 FROM golang:1.24-alpine
 
+# Build arguments
+ARG BUILD_VERSION=dev-docker
+
 # Install development tools
 RUN apk add --no-cache git make
 
@@ -22,7 +25,7 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-ENV BUILD_VERSION=dev2
+ENV BUILD_VERSION=${BUILD_VERSION}
 
 # Create data directory
 RUN mkdir -p /data
