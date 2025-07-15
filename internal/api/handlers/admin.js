@@ -530,7 +530,8 @@ async function getResult() {
                     const taskForVoting = {
                         id: currentTaskId,
                         status: data.status,
-                        rating: data.rating || null
+                        rating: data.rating || null,
+                        token: resultJWT || '' // Передаем resultJWT как токен для голосования
                     };
                     votingContainer.innerHTML = createVotingButtons(taskForVoting);
                 } else {
@@ -883,7 +884,8 @@ function displayTaskResult(taskData) {
         const taskForVoting = {
             id: taskData.taskId,
             status: taskData.status,
-            rating: taskData.rating || null
+            rating: taskData.rating || null,
+            token: resultJWT || '' // Передаем resultJWT как токен для голосования
         };
         votingContainer.innerHTML = createVotingButtons(taskForVoting);
     } else {
@@ -1839,22 +1841,42 @@ function displayAllTasks(tasks) {
 }
 
 // Функции для голосования за задачи
+// Функция для голосования за задачи (для обратной совместимости)
 async function voteTask(taskId, voteType) {
+    return await voteTaskWithToken(taskId, voteType, '');
+}
+
+// Функция для голосования за задачи с передачей токена
+async function voteTaskWithToken(taskId, voteType, taskToken) {
     try {
         const baseUrl = document.getElementById('baseUrl').value;
         const apiKey = document.getElementById('apiKey').value;
         
-        // Определяем, какой токен использовать
+        // Определяем, какой токен использовать для голосования
+        // Приоритет: переданный taskToken > resultJWT (если это текущая задача) > currentJWT
         let authHeader;
-        if (currentJWT) {
+        let tokenSource = '';
+        
+        if (taskToken && taskToken.trim() !== '') {
+            // Используем переданный токен задачи (наивысший приоритет)
+            authHeader = `Bearer ${taskToken}`;
+            tokenSource = 'переданный токен задачи';
+        } else if (resultJWT && currentTaskId === taskId) {
+            // Используем токен для результата, если голосуем за текущую задачу
+            authHeader = `Bearer ${resultJWT}`;
+            tokenSource = 'resultJWT (токен результата)';
+        } else if (currentJWT) {
+            // Используем основной JWT токен как fallback
             authHeader = `Bearer ${currentJWT}`;
-        } else if (apiKey) {
-            authHeader = `Bearer ${apiKey}`;
+            tokenSource = 'currentJWT (основной токен)';
+            log(`⚠️ Используется основной JWT токен для задачи ${taskId}. Это может не работать, если токен не содержит правильный taskId`, 'warning');
         } else {
-            throw new Error('Не настроен ни JWT токен, ни API ключ');
+            throw new Error('Нет доступного JWT токена для голосования. Создайте задачу или загрузите данные пользователя сначала.');
         }
+        
+        log(`� Голосование за задачу ${taskId} с использованием: ${tokenSource}`);
 
-        log(`🗳️ Голосование за задачу ${taskId}: ${voteType}`);
+        log(`�🗳️ Голосование за задачу ${taskId}: ${voteType || 'снятие голоса'}`);
 
         const response = await fetch(`${baseUrl}/api/tasks/vote`, {
             method: 'POST',
@@ -1869,7 +1891,15 @@ async function voteTask(taskId, voteType) {
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+            const errorMessage = errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+            
+            if (response.status === 400 && errorMessage.includes('missing taskId')) {
+                throw new Error(`Токен не содержит правильный taskId для задачи ${taskId}. Попробуйте создать новую задачу или загрузить данные пользователя.`);
+            } else if (response.status === 401) {
+                throw new Error(`Недействительный токен для голосования. Проверьте авторизацию.`);
+            }
+            
+            throw new Error(errorMessage);
         }
 
         const data = await response.json();
@@ -1886,7 +1916,8 @@ async function voteTask(taskId, voteType) {
             const taskForVoting = {
                 id: taskId,
                 status: 'completed',
-                rating: data.rating || null
+                rating: data.rating || null,
+                token: taskToken || resultJWT || '' // Передаем используемый токен
             };
             userVotingContainer.innerHTML = createVotingButtons(taskForVoting);
         }
@@ -1895,7 +1926,8 @@ async function voteTask(taskId, voteType) {
             const taskForVoting = {
                 id: taskId,
                 status: 'completed',
-                rating: data.rating || null
+                rating: data.rating || null,
+                token: taskToken || resultJWT || '' // Передаем используемый токен
             };
             finalResultVotingContainer.innerHTML = createVotingButtons(taskForVoting);
         }
@@ -1915,6 +1947,21 @@ function createVotingButtons(task) {
     const currentRating = task.rating;
     const upvoteClass = currentRating === 'upvote' ? 'vote-active' : '';
     const downvoteClass = currentRating === 'downvote' ? 'vote-active' : '';
+    
+    // Передаем токен задачи в функцию голосования, если он доступен
+    const taskToken = task.token || '';
+    
+    // Если нет токена, показываем сообщение вместо кнопок (для админ панели)
+    if (!taskToken || taskToken.trim() === '') {
+        return `
+            <div style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 4px; border: 1px solid #ffeaa7;">
+                <div style="font-size: 0.85em; color: #856404;">
+                    ℹ️ Голосование недоступно: нет токена задачи.<br>
+                    Для голосования создайте новую задачу или загрузите данные пользователя с помощью "Загрузить данные пользователя".
+                </div>
+            </div>
+        `;
+    }
 
     return `
         <div style="margin-top: 8px; padding: 8px; background: #f0f0f0; border-radius: 4px;">
@@ -1924,14 +1971,14 @@ function createVotingButtons(task) {
             <div style="display: flex; gap: 5px;">
                 <button 
                     class="vote-button ${upvoteClass}" 
-                    onclick="voteTask('${task.id}', '${currentRating}' === 'upvote' ? '' : 'upvote')"
+                    onclick="voteTaskWithToken('${task.id}', '${currentRating}' === 'upvote' ? '' : 'upvote', '${taskToken}')"
                     title="Хорошо выполнено"
                 >
                     👍 ${currentRating === 'upvote' ? 'Понравилось' : 'Нравится'}
                 </button>
                 <button 
                     class="vote-button ${downvoteClass}" 
-                    onclick="voteTask('${task.id}', '${currentRating}' === 'downvote' ? '' : 'downvote')"
+                    onclick="voteTaskWithToken('${task.id}', '${currentRating}' === 'downvote' ? '' : 'downvote', '${taskToken}')"
                     title="Плохо выполнено"
                 >
                     👎 ${currentRating === 'downvote' ? 'Не понравилось' : 'Не нравится'}
