@@ -79,7 +79,7 @@ func (db *DB) GetTask(id string) (*Task, error) {
 	var task Task
 	var ollamaParamsJSON sql.NullString
 	var completedAt, processingStartedAt, heartbeatAt, timeoutAt sql.NullInt64
-	var result, errorMessage, processorID sql.NullString
+	var result, errorMessage, processorID, userRating sql.NullString
 	var actualDuration sql.NullInt64
 
 	err := retryOnBusy(3, func() error {
@@ -87,7 +87,7 @@ func (db *DB) GetTask(id string) (*Task, error) {
 			SELECT id, user_id, product_data, status, result, error_message,
 				   created_at, updated_at, completed_at, priority, retry_count,
 				   max_retries, processor_id, processing_started_at, heartbeat_at,
-				   timeout_at, ollama_params, estimated_duration, actual_duration
+				   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
 			FROM tasks WHERE id = ?
 		`
 
@@ -96,7 +96,7 @@ func (db *DB) GetTask(id string) (*Task, error) {
 			&result, &errorMessage, &task.CreatedAt, &task.UpdatedAt,
 			&completedAt, &task.Priority, &task.RetryCount, &task.MaxRetries,
 			&processorID, &processingStartedAt, &heartbeatAt, &timeoutAt,
-			&ollamaParamsJSON, &task.EstimatedDuration, &actualDuration,
+			&ollamaParamsJSON, &task.EstimatedDuration, &actualDuration, &userRating,
 		)
 	})
 
@@ -128,6 +128,9 @@ func (db *DB) GetTask(id string) (*Task, error) {
 	}
 	if actualDuration.Valid {
 		task.ActualDuration = &actualDuration.Int64
+	}
+	if userRating.Valid {
+		task.UserRating = &userRating.String
 	}
 
 	// Parse ollama params
@@ -207,7 +210,7 @@ func (db *DB) GetAllTasks(userID *string, limit, offset int) ([]*Task, error) {
 			SELECT id, user_id, product_data, status, result, error_message,
 				   created_at, updated_at, completed_at, priority, retry_count,
 				   max_retries, processor_id, processing_started_at, heartbeat_at,
-				   timeout_at, ollama_params, estimated_duration, actual_duration
+				   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
 			FROM tasks 
 			WHERE user_id = ?
 			ORDER BY created_at DESC 
@@ -219,7 +222,7 @@ func (db *DB) GetAllTasks(userID *string, limit, offset int) ([]*Task, error) {
 			SELECT id, user_id, product_data, status, result, error_message,
 				   created_at, updated_at, completed_at, priority, retry_count,
 				   max_retries, processor_id, processing_started_at, heartbeat_at,
-				   timeout_at, ollama_params, estimated_duration, actual_duration
+				   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
 			FROM tasks 
 			ORDER BY created_at DESC 
 			LIMIT ? OFFSET ?
@@ -334,7 +337,7 @@ func (db *DB) GetUserLatestTask(userID string) (*Task, error) {
 	var task Task
 	var ollamaParamsJSON sql.NullString
 	var completedAt, processingStartedAt, heartbeatAt, timeoutAt sql.NullInt64
-	var result, errorMessage, processorID sql.NullString
+	var result, errorMessage, processorID, userRating sql.NullString
 	var actualDuration sql.NullInt64
 
 	err := retryOnBusy(3, func() error {
@@ -342,7 +345,7 @@ func (db *DB) GetUserLatestTask(userID string) (*Task, error) {
 			SELECT id, user_id, product_data, status, result, error_message,
 				   created_at, updated_at, completed_at, priority, retry_count,
 				   max_retries, processor_id, processing_started_at, heartbeat_at,
-				   timeout_at, ollama_params, estimated_duration, actual_duration
+				   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
 			FROM tasks 
 			WHERE user_id = ? 
 			ORDER BY created_at DESC 
@@ -354,7 +357,7 @@ func (db *DB) GetUserLatestTask(userID string) (*Task, error) {
 			&result, &errorMessage, &task.CreatedAt, &task.UpdatedAt,
 			&completedAt, &task.Priority, &task.RetryCount, &task.MaxRetries,
 			&processorID, &processingStartedAt, &heartbeatAt, &timeoutAt,
-			&ollamaParamsJSON, &task.EstimatedDuration, &actualDuration,
+			&ollamaParamsJSON, &task.EstimatedDuration, &actualDuration, &userRating,
 		)
 	})
 
@@ -389,6 +392,9 @@ func (db *DB) GetUserLatestTask(userID string) (*Task, error) {
 	}
 	if actualDuration.Valid {
 		task.ActualDuration = &actualDuration.Int64
+	}
+	if userRating.Valid {
+		task.UserRating = &userRating.String
 	}
 
 	// Parse ollama params
@@ -436,7 +442,7 @@ func scanTask(rows *sql.Rows) (*Task, error) {
 	var task Task
 	var ollamaParamsJSON sql.NullString
 	var completedAt, processingStartedAt, heartbeatAt, timeoutAt sql.NullInt64
-	var result, errorMessage, processorID sql.NullString
+	var result, errorMessage, processorID, userRating sql.NullString
 	var actualDuration sql.NullInt64
 
 	err := rows.Scan(
@@ -444,7 +450,7 @@ func scanTask(rows *sql.Rows) (*Task, error) {
 		&result, &errorMessage, &task.CreatedAt, &task.UpdatedAt,
 		&completedAt, &task.Priority, &task.RetryCount, &task.MaxRetries,
 		&processorID, &processingStartedAt, &heartbeatAt, &timeoutAt,
-		&ollamaParamsJSON, &task.EstimatedDuration, &actualDuration,
+		&ollamaParamsJSON, &task.EstimatedDuration, &actualDuration, &userRating,
 	)
 
 	if err != nil {
@@ -475,6 +481,9 @@ func scanTask(rows *sql.Rows) (*Task, error) {
 	}
 	if actualDuration.Valid {
 		task.ActualDuration = &actualDuration.Int64
+	}
+	if userRating.Valid {
+		task.UserRating = &userRating.String
 	}
 
 	// Parse ollama params
@@ -518,4 +527,138 @@ func (db *DB) RequeueTask(taskID, processorID string, reason *string) error {
 		_, err := db.QueuedExecWithWriteLock(query, args...)
 		return err
 	})
+}
+
+// UpdateTaskRating updates the rating for a task
+func (db *DB) UpdateTaskRating(taskID, userID string, rating *string) error {
+	return retryOnBusy(3, func() error {
+		// First, check if task exists, belongs to user, and is completed
+		var task Task
+		query := `
+			SELECT id, user_id, status 
+			FROM tasks 
+			WHERE id = ? AND user_id = ?
+		`
+
+		err := db.QueuedQueryRow(query, taskID, userID).Scan(
+			&task.ID, &task.UserID, &task.Status,
+		)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("task not found or not owned by user")
+			}
+			return fmt.Errorf("failed to get task: %w", err)
+		}
+
+		// Check if task is completed
+		if task.Status != "completed" {
+			return fmt.Errorf("task must be completed to rate it")
+		}
+
+		// Update the rating
+		updateQuery := `
+			UPDATE tasks 
+			SET user_rating = ?, updated_at = ?
+			WHERE id = ? AND user_id = ?
+		`
+
+		now := time.Now().UnixMilli()
+		_, err = db.QueuedExec(updateQuery, rating, now, taskID, userID)
+		if err != nil {
+			return fmt.Errorf("failed to update task rating: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// GetTasksRatingStats gets rating statistics for tasks
+func (db *DB) GetTasksRatingStats(userID *string) (map[string]int, error) {
+	var query string
+	var args []interface{}
+
+	if userID != nil {
+		query = `
+			SELECT user_rating, COUNT(*) as count 
+			FROM tasks 
+			WHERE user_id = ? AND user_rating IS NOT NULL
+			GROUP BY user_rating
+		`
+		args = []interface{}{*userID}
+	} else {
+		query = `
+			SELECT user_rating, COUNT(*) as count 
+			FROM tasks 
+			WHERE user_rating IS NOT NULL
+			GROUP BY user_rating
+		`
+		args = []interface{}{}
+	}
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	stats := make(map[string]int)
+	for rows.Next() {
+		var rating string
+		var count int
+		if err := rows.Scan(&rating, &count); err != nil {
+			return nil, err
+		}
+		stats[rating] = count
+	}
+
+	return stats, rows.Err()
+}
+
+// GetUserRatedTasks gets tasks with user ratings
+func (db *DB) GetUserRatedTasks(userID string, rating *string, limit, offset int) ([]*Task, error) {
+	var query string
+	var args []interface{}
+
+	if rating != nil {
+		query = `
+			SELECT id, user_id, product_data, status, result, error_message,
+				   created_at, updated_at, completed_at, priority, retry_count,
+				   max_retries, processor_id, processing_started_at, heartbeat_at,
+				   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
+			FROM tasks 
+			WHERE user_id = ? AND user_rating = ?
+			ORDER BY created_at DESC 
+			LIMIT ? OFFSET ?
+		`
+		args = []interface{}{userID, *rating, limit, offset}
+	} else {
+		query = `
+			SELECT id, user_id, product_data, status, result, error_message,
+				   created_at, updated_at, completed_at, priority, retry_count,
+				   max_retries, processor_id, processing_started_at, heartbeat_at,
+				   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
+			FROM tasks 
+			WHERE user_id = ? AND user_rating IS NOT NULL
+			ORDER BY created_at DESC 
+			LIMIT ? OFFSET ?
+		`
+		args = []interface{}{userID, limit, offset}
+	}
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []*Task
+	for rows.Next() {
+		task, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+
+	return tasks, rows.Err()
 }

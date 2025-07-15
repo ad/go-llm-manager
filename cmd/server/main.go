@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -104,6 +105,14 @@ func main() {
 
 	mux.Handle("/api/get", middleware.Chain(
 		http.HandlerFunc(publicHandlers.GetUserData),
+		middleware.Logging,
+		middleware.CORS,
+		middleware.ContentType,
+	))
+
+	// Task voting endpoint (JWT-protected)
+	mux.Handle("/api/tasks/", middleware.Chain(
+		handleTaskVote(publicHandlers),
 		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
@@ -228,6 +237,14 @@ func main() {
 		middleware.ContentType,
 	))
 
+	mux.Handle("/api/internal/rating-stats", middleware.Chain(
+		http.HandlerFunc(internalHandlers.GetRatingStats),
+		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
+		middleware.CORS,
+		middleware.ContentType,
+	))
+
 	// Create server
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
 	server := &http.Server{
@@ -270,11 +287,15 @@ func requireAPIKey(apiKeyAuth *auth.APIKeyManager) func(http.Handler) http.Handl
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Check Authorization header first
 			auth := r.Header.Get("Authorization")
-			if auth != "" && len(auth) > 7 && auth[:7] == "Bearer " {
-				token := auth[7:]
-				if apiKeyAuth.ValidateKey(token) {
-					next.ServeHTTP(w, r)
-					return
+			if auth != "" {
+				// Parse "Bearer <token>" format
+				parts := strings.SplitN(auth, " ", 2)
+				if len(parts) == 2 && parts[0] == "Bearer" && parts[1] != "" {
+					token := parts[1]
+					if apiKeyAuth.ValidateKey(token) {
+						next.ServeHTTP(w, r)
+						return
+					}
 				}
 			}
 
@@ -282,5 +303,25 @@ func requireAPIKey(apiKeyAuth *auth.APIKeyManager) func(http.Handler) http.Handl
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(`{"error": "Invalid or missing API key"}`))
 		})
+	}
+}
+
+// Helper function to handle path patterns with parameters
+func handleTaskVote(publicHandlers *handlers.PublicHandlers) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Parse path: /api/tasks/{id}/vote
+		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+
+		// Expected: ["api", "tasks", "{task_id}", "vote"]
+		if len(parts) == 4 && parts[0] == "api" && parts[1] == "tasks" && parts[3] == "vote" {
+			// parts[2] contains the task ID, we can validate it's not empty
+			if parts[2] != "" {
+				publicHandlers.VoteTask(w, r)
+			} else {
+				http.NotFound(w, r)
+			}
+		} else {
+			http.NotFound(w, r)
+		}
 	}
 }

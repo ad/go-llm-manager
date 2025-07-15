@@ -118,9 +118,13 @@ func RateLimit(checker func(userID string) bool) func(http.Handler) http.Handler
 func extractUserID(r *http.Request) string {
 	// Try to get from JWT token first
 	auth := r.Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") {
-		// TODO: Decode JWT and extract user_id
-		return ""
+	if auth != "" {
+		// Parse "Bearer <token>" format
+		parts := strings.SplitN(auth, " ", 2)
+		if len(parts) == 2 && parts[0] == "Bearer" && parts[1] != "" {
+			// TODO: Decode JWT and extract user_id from parts[1]
+			return ""
+		}
 	}
 
 	// Fallback to query parameter

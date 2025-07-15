@@ -14,9 +14,40 @@
         .btn-success { background: #27ae60; color: #fff; }
         .btn-danger { background: #e74c3c; color: #fff; }
         .btn-warning { background: #f39c12; color: #fff; }
+        .btn-info { background: #3498db; color: #fff; }
         .result { margin-top: 18px; padding: 12px; border-radius: 4px; background: #f8f9fa; min-height: 32px; font-family: monospace; }
         .status { font-weight: bold; }
         .log { font-size: 0.95em; color: #888; margin-top: 18px; background: #f4f4f4; border-radius: 4px; padding: 10px; max-height: 180px; overflow-y: auto; }
+        
+        /* Voting buttons styles */
+        .voting-container { margin-top: 15px; text-align: center; }
+        .vote-button { 
+            padding: 8px 16px; 
+            margin: 0 5px; 
+            border: 2px solid #ddd; 
+            border-radius: 4px; 
+            background: #fff; 
+            cursor: pointer; 
+            font-size: 16px;
+            transition: all 0.2s ease;
+        }
+        .vote-button:hover { 
+            background: #f0f0f0; 
+            transform: scale(1.05);
+        }
+        .vote-button.vote-active { 
+            background: #007bff; 
+            color: white; 
+            border-color: #0056b3;
+        }
+        .vote-button.upvote.vote-active { 
+            background: #28a745; 
+            border-color: #1e7e34;
+        }
+        .vote-button.downvote.vote-active { 
+            background: #dc3545; 
+            border-color: #c82333;
+        }
     </style>
 </head>
 <body>
@@ -50,12 +81,19 @@
         </div>
         <div id="status" class="result"></div>
         <div id="result" class="result"></div>
+        <div id="votingContainer" class="voting-container" style="display: none;">
+            <h3>Оцените качество ответа:</h3>
+            <button id="upvoteBtn" class="vote-button upvote" onclick="voteTask('upvote')">👍 Хорошо</button>
+            <button id="downvoteBtn" class="vote-button downvote" onclick="voteTask('downvote')">👎 Плохо</button>
+        </div>
         <div id="log" class="log"></div>
     </div>
     <script>
         let sse = null;
         let taskToken = null;
         let taskFinalized = false;
+        let currentTaskId = null;
+        let currentUserRating = null;
 
         function log(msg) {
             const logDiv = document.getElementById('log');
@@ -69,14 +107,86 @@
         function setResult(msg) {
             document.getElementById('result').textContent = msg;
         }
+        
         function clearAll() {
             setStatus('');
             setResult('');
             document.getElementById('log').innerHTML = '';
             taskFinalized = false;
+            currentTaskId = null;
+            currentUserRating = null;
+            hideVotingButtons();
             if (sse) { sse.close(); sse = null; }
             document.getElementById('stopBtn').disabled = true;
             document.getElementById('startBtn').disabled = false;
+        }
+
+        function showVotingButtons() {
+            document.getElementById('votingContainer').style.display = 'block';
+            updateVotingButtons();
+        }
+
+        function hideVotingButtons() {
+            document.getElementById('votingContainer').style.display = 'none';
+        }
+
+        function updateVotingButtons() {
+            const upvoteBtn = document.getElementById('upvoteBtn');
+            const downvoteBtn = document.getElementById('downvoteBtn');
+            
+            // Reset classes
+            upvoteBtn.classList.remove('vote-active');
+            downvoteBtn.classList.remove('vote-active');
+            
+            // Set active state based on current rating
+            if (currentUserRating === 'upvote') {
+                upvoteBtn.classList.add('vote-active');
+            } else if (currentUserRating === 'downvote') {
+                downvoteBtn.classList.add('vote-active');
+            }
+        }
+
+        async function voteTask(voteType) {
+            if (!currentTaskId || !taskToken) {
+                log('❌ Нет активной задачи для голосования');
+                return;
+            }
+
+            try {
+                log(`🗳️ Отправка голоса: ${voteType}`);
+                
+                // Check for toggle behavior
+                const actualVoteType = (currentUserRating === voteType) ? '' : voteType;
+                
+                const response = await fetch(`/api/tasks/${currentTaskId}/vote`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${taskToken}`
+                    },
+                    body: JSON.stringify({
+                        vote_type: actualVoteType
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorData}`);
+                }
+
+                const data = await response.json();
+                currentUserRating = data.user_rating;
+                updateVotingButtons();
+                
+                if (data.user_rating) {
+                    log(`✅ Голос отправлен: ${data.user_rating}`);
+                } else {
+                    log(`✅ Голос убран`);
+                }
+                
+            } catch (error) {
+                log(`❌ Ошибка голосования: ${error.message}`);
+            }
         }
 
         document.getElementById('clearBtn').onclick = clearAll;
@@ -141,6 +251,15 @@
                             }
                         }
                     }
+                    
+                    // Show voting buttons if task is completed
+                    if (task.status === 'completed') {
+                        currentTaskId = task.id;
+                        currentUserRating = task.user_rating || null;
+                        taskToken = task.token || tempToken; // Use task token if available, otherwise temp token
+                        showVotingButtons();
+                        log('🗳️ Кнопки голосования доступны для завершенной задачи');
+                    }
                 }
                 
                 // Показываем информацию о rate limits
@@ -189,6 +308,7 @@
                 if (!createResp.ok) throw new Error('Ошибка создания задачи');
                 const createData = await createResp.json();
                 if (!createData.success) throw new Error(createData.error || 'Ошибка создания задачи');
+                currentTaskId = createData.taskId;
                 log('✅ Задача создана: ' + createData.taskId);
                 setStatus('🔄 Ожидание SSE...');
                 // 3. Запускаем SSE
@@ -227,6 +347,11 @@
                     } else if (data.type === 'task_completed') {
                         setStatus('✅ Задача завершена');
                         setResult('🎉 ' + JSON.stringify(data.data, null, 2));
+                        
+                        // Show voting buttons for completed task
+                        currentUserRating = data.data.user_rating || null;
+                        showVotingButtons();
+                        
                         taskFinalized = true;
                         sse.close();
                         document.getElementById('stopBtn').disabled = true;

@@ -21,7 +21,8 @@ CREATE TABLE tasks (
     timeout_at INTEGER,
     ollama_params TEXT,
     estimated_duration INTEGER DEFAULT 300000, -- 5 minutes default
-    actual_duration INTEGER
+    actual_duration INTEGER,
+    user_rating TEXT CHECK (user_rating IN ('upvote', 'downvote', NULL))
 );
 
 -- Rate limiting table
@@ -107,3 +108,6 @@ WHERE status = 'processing';
 -- Index for cleanup operations
 CREATE INDEX IF NOT EXISTS idx_tasks_cleanup ON tasks(status, completed_at, updated_at)
 WHERE status IN ('completed', 'failed');
+
+-- Index for task rating statistics
+CREATE INDEX IF NOT EXISTS idx_tasks_user_rating ON tasks(user_rating);

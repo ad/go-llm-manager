@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ad/go-llm-manager/internal/auth"
@@ -353,6 +354,115 @@ func (h *PublicHandlers) GetUserData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.SendJSON(w, http.StatusOK, data)
+}
+
+// POST /api/tasks/{id}/vote - Vote on a task (JWT auth required)
+func (h *PublicHandlers) VoteTask(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		utils.SendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Extract and validate JWT token
+	payload, err := h.jwtAuth.ExtractPayload(r)
+	if err != nil {
+		utils.SendError(w, http.StatusUnauthorized, "Invalid token")
+		return
+	}
+
+	userID := payload.UserID
+	if userID == "" && payload.Subject != "" {
+		userID = payload.Subject
+	}
+
+	if userID == "" {
+		utils.SendError(w, http.StatusBadRequest, "Invalid token: missing user_id")
+		return
+	}
+
+	// Extract task ID from URL path
+	// Parse path: /api/tasks/{id}/vote
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+
+	// Expected: ["api", "tasks", "{task_id}", "vote"]
+	if len(parts) != 4 || parts[0] != "api" || parts[1] != "tasks" || parts[3] != "vote" {
+		utils.SendError(w, http.StatusBadRequest, "Invalid URL format")
+		return
+	}
+
+	taskID := parts[2]
+	if taskID == "" {
+		utils.SendError(w, http.StatusBadRequest, "Missing task ID")
+		return
+	}
+
+	// Parse request body
+	var req database.VoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		utils.SendError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	log.Printf("VoteTask: userID=%s, taskID=%s, voteType=%s", userID, taskID, req.VoteType)
+
+	// Validate vote value
+	if req.VoteType != "upvote" && req.VoteType != "downvote" && req.VoteType != "" {
+		utils.SendError(w, http.StatusBadRequest, "Invalid vote value. Must be 'upvote', 'downvote', or empty string")
+		return
+	}
+
+	// Get task to verify ownership and status
+	task, err := h.db.GetTask(taskID)
+	if err != nil {
+		utils.SendError(w, http.StatusNotFound, "Task not found")
+		return
+	}
+
+	// Check if user owns the task
+	if task.UserID != userID {
+		utils.SendError(w, http.StatusForbidden, "You can only vote on your own tasks")
+		return
+	}
+
+	// Check if task is completed
+	if task.Status != "completed" {
+		utils.SendError(w, http.StatusBadRequest, "You can only vote on completed tasks")
+		return
+	}
+
+	// Update task rating with toggle logic
+	var newRating *string
+
+	// Check if user is trying to vote the same way (toggle behavior)
+	if req.VoteType != "" {
+		if task.UserRating != nil && *task.UserRating == req.VoteType {
+			// Same vote - remove it (toggle)
+			newRating = nil
+		} else {
+			// Different vote or no vote - set new vote
+			newRating = &req.VoteType
+		}
+	} else {
+		// Empty vote type - remove current vote
+		newRating = nil
+	}
+
+	err = h.db.UpdateTaskRating(taskID, userID, newRating)
+	if err != nil {
+		log.Printf("Failed to update task rating: %v", err)
+		utils.SendError(w, http.StatusInternalServerError, "Failed to update rating")
+		return
+	}
+
+	log.Printf("Successfully updated task rating: taskID=%s, newRating=%v", taskID, newRating)
+
+	// Return response
+	response := database.VoteResponse{
+		Success:    true,
+		UserRating: newRating,
+	}
+
+	utils.SendJSON(w, http.StatusOK, response)
 }
 
 // GET /admin - HTML admin page

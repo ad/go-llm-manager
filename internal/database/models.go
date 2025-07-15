@@ -25,6 +25,7 @@ type Task struct {
 	OllamaParams        *string `json:"ollama_params,omitempty" db:"ollama_params"`
 	EstimatedDuration   *int64  `json:"estimated_duration,omitempty" db:"estimated_duration"`
 	ActualDuration      *int64  `json:"actual_duration,omitempty" db:"actual_duration"`
+	UserRating          *string `json:"user_rating,omitempty" db:"user_rating"` // "upvote", "downvote" или NULL
 }
 
 type OllamaParams struct {
@@ -106,6 +107,15 @@ type TaskResponse struct {
 	CreatedAt    int64  `json:"created_at"`
 	Result       string `json:"result,omitempty"`
 	ErrorMessage string `json:"error_message,omitempty"`
+}
+
+type VoteRequest struct {
+	VoteType string `json:"vote_type" binding:"required"` // "upvote" или "downvote" (повторное нажатие убирает рейтинг)
+}
+
+type VoteResponse struct {
+	Success    bool    `json:"success"`
+	UserRating *string `json:"user_rating,omitempty"` // текущий рейтинг пользователя
 }
 
 type JWTPayload struct {

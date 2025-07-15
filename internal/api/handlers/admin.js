@@ -1774,8 +1774,82 @@ function displayAllTasks(tasks) {
                         <strong>Ошибка:</strong> ${task.error_message.substring(0, 200)}${task.error_message.length > 200 ? '...' : ''}
                     </div>
                 ` : ''}
+                ${createVotingButtons(task)}
             </div>
         `;
         container.appendChild(taskEl);
     });
+}
+
+// Функции для голосования за задачи
+async function voteTask(taskId, voteType) {
+    try {
+        if (!currentJWT) {
+            throw new Error('JWT токен не настроен');
+        }
+
+        const baseUrl = document.getElementById('baseUrl').value;
+        log(`🗳️ Голосование за задачу ${taskId}: ${voteType}`);
+
+        const response = await fetch(`${baseUrl}/api/tasks/${taskId}/vote`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${currentJWT}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                vote_type: voteType
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        log(`✅ Голос принят: ${data.user_rating || 'убран'}`, 'success');
+        
+        // Обновляем список задач
+        await refreshTaskList();
+        
+        return data;
+    } catch (error) {
+        log(`❌ Ошибка голосования: ${error.message}`, 'error');
+        throw error;
+    }
+}
+
+function createVotingButtons(task) {
+    if (!task.id || task.status !== 'completed' || !currentJWT) {
+        return '';
+    }
+
+    const currentRating = task.user_rating;
+    const upvoteClass = currentRating === 'upvote' ? 'vote-active' : '';
+    const downvoteClass = currentRating === 'downvote' ? 'vote-active' : '';
+
+    return `
+        <div style="margin-top: 8px; padding: 8px; background: #f0f0f0; border-radius: 4px;">
+            <div style="font-size: 0.9em; margin-bottom: 5px; color: #555;">
+                Оцените качество выполнения:
+            </div>
+            <div style="display: flex; gap: 5px;">
+                <button 
+                    class="vote-button ${upvoteClass}" 
+                    onclick="voteTask('${task.id}', currentRating === 'upvote' ? '' : 'upvote')"
+                    title="Хорошо выполнено"
+                >
+                    👍 ${currentRating === 'upvote' ? 'Понравилось' : 'Нравится'}
+                </button>
+                <button 
+                    class="vote-button ${downvoteClass}" 
+                    onclick="voteTask('${task.id}', currentRating === 'downvote' ? '' : 'downvote')"
+                    title="Плохо выполнено"
+                >
+                    👎 ${currentRating === 'downvote' ? 'Не понравилось' : 'Не нравится'}
+                </button>
+            </div>
+        </div>
+    `;
 }

@@ -119,8 +119,44 @@
     ```
   - Форматы событий см. internal/database/models.go (SSEEventTaskStatus, SSEEventTaskCompleted и др.).
 
+### 6. Оценка выполнения задачи (POST /api/tasks/{id}/vote)
+- **Аутентификация**: JWT токен должен содержать `user_id`.
+- **Доступ**: Только владелец задачи может голосовать.
+- **Ограничения**: Голосование доступно только для завершенных задач (`status = 'completed'`).
+- Тело запроса:
+```json
+{
+  "vote_type": "upvote" | "downvote" | ""
+}
+```
+- **Логика голосования**:
+  - `"upvote"` — положительная оценка качества выполнения
+  - `"downvote"` — отрицательная оценка качества выполнения
+  - `""` (пустая строка) — удаление текущего голоса
+  - Повторное голосование тем же типом удаляет голос (toggle behavior)
+- Ответ:
+```json
+{
+  "success": true,
+  "user_rating": "upvote" | "downvote" | null
+}
+```
+- Примеры использования:
+```bash
+# Поставить положительную оценку
+curl -X POST "http://localhost:8080/api/tasks/task-123/vote" \
+  -H "Authorization: Bearer <jwt_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"vote_type": "upvote"}'
 
-#### 6. HTML-страницы
+# Убрать оценку (повторный upvote)
+curl -X POST "http://localhost:8080/api/tasks/task-123/vote" \
+  -H "Authorization: Bearer <jwt_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"vote_type": "upvote"}'
+```
+
+#### 7. HTML-страницы
 - `GET /admin` — HTML-страница для администрирования.
 - `GET /query` — HTML-страница для тестирования SSE polling.
 
@@ -335,6 +371,38 @@
     ```
   - Возвращает задачу в пул (например, при сбое воркера).
 
+### 11. Статистика рейтингов
+- `GET /api/internal/rating-stats` — Получить статистику голосований по задачам.
+- `GET /api/internal/rating-stats?user_id=<user_id>` — Получить статистику голосований для конкретного пользователя.
+- Ответ (глобальная статистика):
+```json
+{
+  "success": true,
+  "total_rated": 15,
+  "upvotes": 10,
+  "downvotes": 5
+}
+```
+- Ответ (статистика пользователя):
+```json
+{
+  "success": true,
+  "user_id": "user-123",
+  "total_rated": 3,
+  "upvotes": 2,
+  "downvotes": 1,
+  "tasks": [
+    {
+      "id": "task-456",
+      "status": "completed",
+      "user_rating": "upvote",
+      "created_at": "2024-06-26T12:00:00Z",
+      ...
+    }
+  ]
+}
+```
+
 ---
 
 ## Пример структуры задачи
@@ -349,7 +417,8 @@
   "error_message": "string|null",
   "created_at": 1719400000000,
   "priority": 0,
-  "ollama_params": "{...}"
+  "ollama_params": "{...}",
+  "user_rating": "upvote|downvote|null"
 }
 ```
 

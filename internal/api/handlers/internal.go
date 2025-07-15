@@ -1073,3 +1073,68 @@ func (h *InternalHandlers) RequeueTask(w http.ResponseWriter, r *http.Request) {
 
 	utils.SendJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
+
+// GET /api/internal/rating-stats - Get rating statistics
+func (h *InternalHandlers) GetRatingStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.SendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Get user_id from query parameter (optional)
+	userID := r.URL.Query().Get("user_id")
+
+	var data map[string]interface{}
+
+	if userID != "" {
+		// Get stats for specific user
+		userRatedTasks, err := h.db.GetUserRatedTasks(userID, nil, 100, 0)
+		if err != nil {
+			utils.SendError(w, http.StatusInternalServerError, "Failed to get user rated tasks")
+			return
+		}
+
+		// Count upvotes and downvotes for this user
+		upvotes := 0
+		downvotes := 0
+		for _, task := range userRatedTasks {
+			if task.UserRating != nil {
+				switch *task.UserRating {
+				case "upvote":
+					upvotes++
+				case "downvote":
+					downvotes++
+				}
+			}
+		}
+
+		data = map[string]interface{}{
+			"success":     true,
+			"user_id":     userID,
+			"total_rated": len(userRatedTasks),
+			"upvotes":     upvotes,
+			"downvotes":   downvotes,
+			"tasks":       userRatedTasks,
+		}
+	} else {
+		// Get global stats
+		stats, err := h.db.GetTasksRatingStats(nil)
+		if err != nil {
+			log.Printf("Failed to get global rating stats: %v", err)
+			utils.SendError(w, http.StatusInternalServerError, "Failed to get global rating stats")
+			return
+		}
+
+		upvotes := stats["upvote"]
+		downvotes := stats["downvote"]
+
+		data = map[string]interface{}{
+			"success":     true,
+			"total_rated": upvotes + downvotes,
+			"upvotes":     upvotes,
+			"downvotes":   downvotes,
+		}
+	}
+
+	utils.SendJSON(w, http.StatusOK, data)
+}

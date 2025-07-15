@@ -46,7 +46,8 @@ func setupTestDB(t *testing.T) *database.DB {
 		timeout_at INTEGER,
 		ollama_params TEXT,
 		estimated_duration INTEGER DEFAULT 300000, -- 5 minutes default
-		actual_duration INTEGER
+		actual_duration INTEGER,
+		user_rating TEXT CHECK (user_rating IN ('upvote', 'downvote', NULL))
 	);
 	
 	CREATE TABLE rate_limits (
@@ -197,14 +198,14 @@ func GetTask(db *database.DB, id string) (*database.Task, error) {
 		SELECT id, user_id, product_data, status, result, error_message,
 			   created_at, updated_at, completed_at, priority, retry_count,
 			   max_retries, processor_id, processing_started_at, heartbeat_at,
-			   timeout_at, ollama_params, estimated_duration, actual_duration
+			   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
 		FROM tasks WHERE id = ?
 	`
 
 	var task database.Task
 	var ollamaParamsJSON sql.NullString
 	var completedAt, processingStartedAt, heartbeatAt, timeoutAt sql.NullInt64
-	var result, errorMessage, processorID sql.NullString
+	var result, errorMessage, processorID, userRating sql.NullString
 	var actualDuration sql.NullInt64
 
 	err := db.QueryRow(query, id).Scan(
@@ -212,7 +213,7 @@ func GetTask(db *database.DB, id string) (*database.Task, error) {
 		&result, &errorMessage, &task.CreatedAt, &task.UpdatedAt,
 		&completedAt, &task.Priority, &task.RetryCount, &task.MaxRetries,
 		&processorID, &processingStartedAt, &heartbeatAt, &timeoutAt,
-		&ollamaParamsJSON, &task.EstimatedDuration, &actualDuration,
+		&ollamaParamsJSON, &task.EstimatedDuration, &actualDuration, &userRating,
 	)
 
 	if err != nil {
@@ -228,6 +229,9 @@ func GetTask(db *database.DB, id string) (*database.Task, error) {
 	}
 	if processorID.Valid {
 		task.ProcessorID = &processorID.String
+	}
+	if userRating.Valid {
+		task.UserRating = &userRating.String
 	}
 	if completedAt.Valid {
 		task.CompletedAt = &completedAt.Int64
