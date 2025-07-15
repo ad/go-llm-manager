@@ -2322,10 +2322,10 @@ function displayUserTasks(tasks) {
         const completedAt = task.completed_at ? new Date(task.completed_at).toLocaleString('ru-RU') : 'Не завершена';
         
         // Обрезаем длинные тексты
-        const shortQuery = task.query && task.query.length > 100 ? 
-            task.query.substring(0, 100) + '...' : (task.query || 'Нет запроса');
-        const shortResponse = task.response && task.response.length > 200 ? 
-            task.response.substring(0, 200) + '...' : (task.response || 'Нет ответа');
+        const shortQuery = task.product_data && task.product_data.length > 100 ? 
+            task.product_data.substring(0, 100) + '...' : (task.product_data || 'Нет запроса');
+        const shortResponse = task.result && task.result.length > 512 ? 
+            task.result.substring(0, 512) + '...' : (task.result || 'Нет ответа');
         
         return `
             <div class="user-task-item">
