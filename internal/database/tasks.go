@@ -662,3 +662,103 @@ func (db *DB) GetUserRatedTasks(userID string, rating *string, limit, offset int
 
 	return tasks, rows.Err()
 }
+
+// GetRatingStatsByPeriod gets rating statistics grouped by time period
+func (db *DB) GetRatingStatsByPeriod(period string, count int) ([]map[string]interface{}, error) {
+	var results []map[string]interface{}
+
+	// Define time format and grouping based on period
+	var timeFormat, groupBy string
+	switch period {
+	case "hour":
+		timeFormat = "%Y-%m-%d %H"
+		groupBy = "datetime(completed_at/1000, 'unixepoch', 'localtime', 'start of hour')"
+	case "day":
+		timeFormat = "%Y-%m-%d"
+		groupBy = "date(completed_at/1000, 'unixepoch', 'localtime')"
+	default:
+		return results, fmt.Errorf("unsupported period: %s", period)
+	}
+
+	query := fmt.Sprintf(`
+		WITH periods AS (
+			SELECT %s as period_start,
+				   strftime('%s', %s) as period_label,
+				   SUM(CASE WHEN user_rating = 'upvote' THEN 1 ELSE 0 END) as upvotes,
+				   SUM(CASE WHEN user_rating = 'downvote' THEN 1 ELSE 0 END) as downvotes,
+				   COUNT(CASE WHEN user_rating IS NOT NULL THEN 1 END) as total_rated
+			FROM tasks 
+			WHERE status = 'completed' 
+			  AND completed_at IS NOT NULL
+			  AND %s >= datetime('now', '-%d %s', 'localtime')
+			GROUP BY %s
+			ORDER BY period_start DESC
+			LIMIT ?
+		)
+		SELECT period_label, upvotes, downvotes, total_rated
+		FROM periods 
+		ORDER BY period_start ASC
+	`, groupBy, timeFormat, groupBy, groupBy, count, period, groupBy)
+
+	rows, err := db.Query(query, count)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get rating stats by period: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var periodLabel string
+		var upvotes, downvotes, totalRated int
+
+		err := rows.Scan(&periodLabel, &upvotes, &downvotes, &totalRated)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan rating stats: %w", err)
+		}
+
+		var qualityScore float64
+		if totalRated > 0 {
+			qualityScore = float64(upvotes-downvotes) / float64(totalRated) * 100
+		}
+
+		results = append(results, map[string]interface{}{
+			"period":        periodLabel,
+			"upvotes":       upvotes,
+			"downvotes":     downvotes,
+			"total_rated":   totalRated,
+			"quality_score": qualityScore,
+		})
+	}
+
+	return results, rows.Err()
+}
+
+// GetRecentRatedTasks gets the most recently rated tasks
+func (db *DB) GetRecentRatedTasks(limit int) ([]*Task, error) {
+	query := `
+		SELECT id, user_id, product_data, status, result, error_message,
+			   created_at, updated_at, completed_at, priority, retry_count,
+			   max_retries, processor_id, processing_started_at, heartbeat_at,
+			   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
+		FROM tasks 
+		WHERE user_rating IS NOT NULL AND status = 'completed'
+		ORDER BY updated_at DESC 
+		LIMIT ?
+	`
+
+	rows, err := db.Query(query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get recent rated tasks: %w", err)
+	}
+	defer rows.Close()
+
+	var tasks []*Task
+	for rows.Next() {
+		task, err := scanTask(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan task: %w", err)
+		}
+		tasks = append(tasks, task)
+	}
+
+	return tasks, rows.Err()
+}

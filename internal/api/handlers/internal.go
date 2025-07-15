@@ -1138,3 +1138,99 @@ func (h *InternalHandlers) GetRatingStats(w http.ResponseWriter, r *http.Request
 
 	utils.SendJSON(w, http.StatusOK, data)
 }
+
+// GET /api/internal/rating-analytics - Get detailed rating analytics
+func (h *InternalHandlers) GetRatingAnalytics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.SendError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	// Get query parameters
+	period := r.URL.Query().Get("period") // "today", "week", "month", default: "week"
+	if period == "" {
+		period = "week"
+	}
+
+	// Get global stats
+	stats, err := h.db.GetTasksRatingStats(nil)
+	if err != nil {
+		log.Printf("Failed to get global rating stats: %v", err)
+		utils.SendError(w, http.StatusInternalServerError, "Failed to get global rating stats")
+		return
+	}
+
+	upvotes := stats["upvote"]
+	downvotes := stats["downvote"]
+	totalRated := upvotes + downvotes
+
+	// Calculate percentages and quality score
+	var upvotePercentage, downvotePercentage float64
+	var qualityScore float64
+	if totalRated > 0 {
+		upvotePercentage = float64(upvotes) / float64(totalRated) * 100
+		downvotePercentage = float64(downvotes) / float64(totalRated) * 100
+		qualityScore = float64(upvotes-downvotes) / float64(totalRated) * 100
+	}
+
+	// Get total tasks for coverage calculation
+	allTasks, err := h.db.GetAllTasks(nil, 1000, 0)
+	if err != nil {
+		log.Printf("Failed to get all tasks: %v", err)
+		allTasks = []*database.Task{}
+	}
+
+	completedTasks := 0
+	for _, task := range allTasks {
+		if task.Status == "completed" {
+			completedTasks++
+		}
+	}
+
+	var ratingCoverage float64
+	if completedTasks > 0 {
+		ratingCoverage = float64(totalRated) / float64(completedTasks) * 100
+	}
+
+	// Get time-based analytics
+	dailyStats, err := h.db.GetRatingStatsByPeriod("day", 7)
+	if err != nil {
+		log.Printf("Failed to get daily rating stats: %v", err)
+		dailyStats = []map[string]interface{}{}
+	}
+
+	hourlyStats, err := h.db.GetRatingStatsByPeriod("hour", 24)
+	if err != nil {
+		log.Printf("Failed to get hourly rating stats: %v", err)
+		hourlyStats = []map[string]interface{}{}
+	}
+
+	// Get recent ratings
+	recentRatedTasks, err := h.db.GetRecentRatedTasks(10)
+	if err != nil {
+		log.Printf("Failed to get recent rated tasks: %v", err)
+		recentRatedTasks = []*database.Task{}
+	}
+
+	data := map[string]interface{}{
+		"success": true,
+		"summary": map[string]interface{}{
+			"upvotes":             upvotes,
+			"downvotes":           downvotes,
+			"total_rated":         totalRated,
+			"upvote_percentage":   upvotePercentage,
+			"downvote_percentage": downvotePercentage,
+			"quality_score":       qualityScore,
+			"rating_coverage":     ratingCoverage,
+			"completed_tasks":     completedTasks,
+		},
+		"charts": map[string]interface{}{
+			"daily":  dailyStats,
+			"hourly": hourlyStats,
+		},
+		"recent_ratings": recentRatedTasks,
+		"period":         period,
+	}
+
+	utils.SendJSON(w, http.StatusOK, data)
+}

@@ -245,6 +245,14 @@ func main() {
 		middleware.ContentType,
 	))
 
+	mux.Handle("/api/internal/rating-analytics", middleware.Chain(
+		http.HandlerFunc(internalHandlers.GetRatingAnalytics),
+		requireAPIKey(apiKeyAuth),
+		middleware.Logging,
+		middleware.CORS,
+		middleware.ContentType,
+	))
+
 	// Create server
 	addr := fmt.Sprintf("%s:%s", cfg.Server.Host, cfg.Server.Port)
 	server := &http.Server{

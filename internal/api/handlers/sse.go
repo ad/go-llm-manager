@@ -198,6 +198,7 @@ func (h *SSEHandlers) pollTask(client *sse.Client, taskID, userID string, pollIn
 							"taskId":      task.ID,
 							"status":      task.Status,
 							"result":      task.Result,
+							"user_rating": task.UserRating,
 							"createdAt":   time.Unix(0, task.CreatedAt*int64(time.Millisecond)).Format(time.RFC3339),
 							"completedAt": formatTimePtr(task.CompletedAt),
 						},
@@ -345,6 +346,7 @@ func (h *SSEHandlers) sendImmediateResult(w http.ResponseWriter, task *database.
 			"taskId":      task.ID,
 			"status":      task.Status,
 			"result":      task.Result,
+			"user_rating": task.UserRating,
 			"createdAt":   time.Unix(0, task.CreatedAt*int64(time.Millisecond)).Format(time.RFC3339),
 			"completedAt": formatTimePtr(task.CompletedAt),
 		}

@@ -236,6 +236,100 @@
                 <h3>📈 Статистика в реальном времени</h3>
                 <div id="realtimeStats" class="metrics-grid"></div>
             </div>
+
+            <div class="container">
+                <h3>⭐ Аналитика рейтингов</h3>
+                <div class="rating-analytics-controls">
+                    <button onclick="loadRatingAnalytics()" class="btn-info">🔄 Обновить аналитику</button>
+                    <button onclick="startRatingPolling()" id="ratingPollingBtn" class="btn-success">▶️ Автообновление (30с)</button>
+                    <button onclick="stopRatingPolling()" id="stopRatingBtn" disabled class="btn-danger">⏹️ Остановить</button>
+                </div>
+                
+                <div id="ratingAnalyticsContainer" class="rating-analytics-container">
+                    <div class="rating-summary">
+                        <div class="rating-card">
+                            <h4>👍 Положительные</h4>
+                            <div class="rating-value" id="totalUpvotes">0</div>
+                            <div class="rating-percentage" id="upvotePercentage">0%</div>
+                        </div>
+                        <div class="rating-card">
+                            <h4>👎 Отрицательные</h4>
+                            <div class="rating-value" id="totalDownvotes">0</div>
+                            <div class="rating-percentage" id="downvotePercentage">0%</div>
+                        </div>
+                        <div class="rating-card">
+                            <h4>📊 Всего оценок</h4>
+                            <div class="rating-value" id="totalRated">0</div>
+                            <div class="rating-percentage" id="ratingCoverage">0%</div>
+                        </div>
+                        <div class="rating-card">
+                            <h4>📈 Качество</h4>
+                            <div class="rating-value" id="qualityScore">0.0</div>
+                            <div class="rating-percentage" id="qualityTrend">📊</div>
+                        </div>
+                    </div>
+                    
+                    <div class="rating-charts">
+                        <div class="chart-container">
+                            <h4>📅 Рейтинги по дням (последние 7 дней)</h4>
+                            <div id="dailyRatingChart" class="chart-canvas">
+                                <div class="chart-placeholder">Загрузка данных...</div>
+                            </div>
+                        </div>
+                        
+                        <div class="chart-container">
+                            <h4>⏰ Рейтинги по часам (сегодня)</h4>
+                            <div id="hourlyRatingChart" class="chart-canvas">
+                                <div class="chart-placeholder">Загрузка данных...</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="rating-details">
+                        <h4>📋 Последние оценки</h4>
+                        <div id="recentRatings" class="recent-ratings-list">
+                            <div class="rating-placeholder">Загрузка последних оценок...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="container">
+                <h3>📊 Базовая статистика рейтингов</h3>
+                <div class="rating-stats-controls">
+                    <button onclick="loadBasicRatingStats()" class="btn-info">🔄 Обновить статистику</button>
+                    <input type="text" id="userIdInput" placeholder="ID пользователя (опционально)" class="user-input">
+                    <button onclick="loadUserRatingStats()" class="btn-success">👤 Показать для пользователя</button>
+                    <button onclick="clearUserStats()" class="btn-secondary">🔄 Общая статистика</button>
+                </div>
+                
+                <div id="basicRatingStatsContainer" class="basic-rating-stats-container">
+                    <div class="stats-summary">
+                        <div class="stat-card">
+                            <h4>🎯 Всего оценок</h4>
+                            <div class="stat-value" id="basicTotalRated">0</div>
+                            <div class="stat-label" id="basicStatsLabel">Общая статистика</div>
+                        </div>
+                        <div class="stat-card">
+                            <h4>👍 Положительные</h4>
+                            <div class="stat-value" id="basicUpvotes">0</div>
+                            <div class="stat-percentage" id="basicUpvotePercentage">0%</div>
+                        </div>
+                        <div class="stat-card">
+                            <h4>👎 Отрицательные</h4>
+                            <div class="stat-value" id="basicDownvotes">0</div>
+                            <div class="stat-percentage" id="basicDownvotePercentage">0%</div>
+                        </div>
+                    </div>
+                    
+                    <div id="userTasksList" class="user-tasks-container" style="display: none;">
+                        <h4>📋 Оцененные задачи пользователя</h4>
+                        <div id="userTasks" class="user-tasks-list">
+                            <div class="tasks-placeholder">Выберите пользователя для просмотра его задач</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Системные функции -->

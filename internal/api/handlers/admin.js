@@ -1,5 +1,6 @@
 let currentJWT = null;
 let resultJWT = null;
+let currentTaskId = null;
 let pollingInterval = null;
 let sseConnection = null;
 let magicSSEConnection = null;
@@ -13,6 +14,7 @@ let ssePollingConnection = null;
 let ssePollingTaskId = null;
 let ssePollingTaskCompleted = false;
 let tasksAutoRefreshInterval = null;
+let ratingPollingInterval = null;
 
 // Автоматически устанавливаем базовый URL
 window.addEventListener('load', function() {
@@ -512,6 +514,28 @@ async function getResult() {
                 }, null, 2);
                 log('🎉 Задача выполнена!', 'success');
                 stopPolling();
+                
+                // Добавляем кнопки оценки для завершенной задачи
+                let votingContainer = document.getElementById('finalResultVotingContainer');
+                if (!votingContainer) {
+                    votingContainer = document.createElement('div');
+                    votingContainer.id = 'finalResultVotingContainer';
+                    const finalResultDiv = document.getElementById('finalResult');
+                    if (finalResultDiv) {
+                        finalResultDiv.appendChild(votingContainer);
+                    }
+                }
+                
+                if (currentTaskId) {
+                    const taskForVoting = {
+                        id: currentTaskId,
+                        status: data.status,
+                        user_rating: data.user_rating || null
+                    };
+                    votingContainer.innerHTML = createVotingButtons(taskForVoting);
+                } else {
+                    votingContainer.innerHTML = '';
+                }
             } else if (data.status === 'failed') {
                 document.getElementById('resultText').textContent = JSON.stringify({
                     status: data.status,
@@ -520,6 +544,12 @@ async function getResult() {
                 }, null, 2);
                 log('❌ Задача завершилась с ошибкой', 'error');
                 stopPolling();
+                
+                // Очищаем кнопки оценки для неудачных задач
+                const votingContainer = document.getElementById('finalResultVotingContainer');
+                if (votingContainer) {
+                    votingContainer.innerHTML = '';
+                }
             } else {
                 document.getElementById('resultText').textContent = JSON.stringify({
                     status: data.status,
@@ -527,6 +557,12 @@ async function getResult() {
                     message: 'Задача в процессе обработки...'
                 }, null, 2);
                 log(`⏳ Задача в процессе: ${data.status}`);
+                
+                // Очищаем кнопки оценки для задач в процессе
+                const votingContainer = document.getElementById('finalResultVotingContainer');
+                if (votingContainer) {
+                    votingContainer.innerHTML = '';
+                }
             }
         } else {
             throw new Error(data.error || 'Неизвестная ошибка');
@@ -831,6 +867,27 @@ function displayTaskResult(taskData) {
         }
     } else {
         log('❌ Элемент taskResultText не найден в DOM!');
+    }
+    
+    // Добавляем кнопки оценки для завершенных задач
+    let votingContainer = document.getElementById('userTaskVotingContainer');
+    if (!votingContainer) {
+        votingContainer = document.createElement('div');
+        votingContainer.id = 'userTaskVotingContainer';
+        if (resultDiv) {
+            resultDiv.appendChild(votingContainer);
+        }
+    }
+    
+    if (taskData.status === 'completed' && taskData.taskId) {
+        const taskForVoting = {
+            id: taskData.taskId,
+            status: taskData.status,
+            user_rating: taskData.user_rating || null
+        };
+        votingContainer.innerHTML = createVotingButtons(taskForVoting);
+    } else {
+        votingContainer.innerHTML = '';
     }
     
     log('✅ displayTaskResult: финальное отображение обновлено');
@@ -1784,17 +1841,25 @@ function displayAllTasks(tasks) {
 // Функции для голосования за задачи
 async function voteTask(taskId, voteType) {
     try {
-        if (!currentJWT) {
-            throw new Error('JWT токен не настроен');
+        const baseUrl = document.getElementById('baseUrl').value;
+        const apiKey = document.getElementById('apiKey').value;
+        
+        // Определяем, какой токен использовать
+        let authHeader;
+        if (currentJWT) {
+            authHeader = `Bearer ${currentJWT}`;
+        } else if (apiKey) {
+            authHeader = `Bearer ${apiKey}`;
+        } else {
+            throw new Error('Не настроен ни JWT токен, ни API ключ');
         }
 
-        const baseUrl = document.getElementById('baseUrl').value;
         log(`🗳️ Голосование за задачу ${taskId}: ${voteType}`);
 
         const response = await fetch(`${baseUrl}/api/tasks/${taskId}/vote`, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${currentJWT}`,
+                'Authorization': authHeader,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
@@ -1810,8 +1875,30 @@ async function voteTask(taskId, voteType) {
         const data = await response.json();
         log(`✅ Голос принят: ${data.user_rating || 'убран'}`, 'success');
         
-        // Обновляем список задач
+        // Обновляем список задач в админ панели
         await refreshTaskList();
+        
+        // Обновляем кнопки оценки в пользовательском интерфейсе
+        const userVotingContainer = document.getElementById('userTaskVotingContainer');
+        const finalResultVotingContainer = document.getElementById('finalResultVotingContainer');
+        
+        if (userVotingContainer) {
+            const taskForVoting = {
+                id: taskId,
+                status: 'completed',
+                user_rating: data.user_rating || null
+            };
+            userVotingContainer.innerHTML = createVotingButtons(taskForVoting);
+        }
+        
+        if (finalResultVotingContainer) {
+            const taskForVoting = {
+                id: taskId,
+                status: 'completed',
+                user_rating: data.user_rating || null
+            };
+            finalResultVotingContainer.innerHTML = createVotingButtons(taskForVoting);
+        }
         
         return data;
     } catch (error) {
@@ -1821,7 +1908,7 @@ async function voteTask(taskId, voteType) {
 }
 
 function createVotingButtons(task) {
-    if (!task.id || task.status !== 'completed' || !currentJWT) {
+    if (!task.id || task.status !== 'completed') {
         return '';
     }
 
@@ -1837,14 +1924,14 @@ function createVotingButtons(task) {
             <div style="display: flex; gap: 5px;">
                 <button 
                     class="vote-button ${upvoteClass}" 
-                    onclick="voteTask('${task.id}', currentRating === 'upvote' ? '' : 'upvote')"
+                    onclick="voteTask('${task.id}', '${currentRating}' === 'upvote' ? '' : 'upvote')"
                     title="Хорошо выполнено"
                 >
                     👍 ${currentRating === 'upvote' ? 'Понравилось' : 'Нравится'}
                 </button>
                 <button 
                     class="vote-button ${downvoteClass}" 
-                    onclick="voteTask('${task.id}', currentRating === 'downvote' ? '' : 'downvote')"
+                    onclick="voteTask('${task.id}', '${currentRating}' === 'downvote' ? '' : 'downvote')"
                     title="Плохо выполнено"
                 >
                     👎 ${currentRating === 'downvote' ? 'Не понравилось' : 'Не нравится'}
@@ -1853,3 +1940,460 @@ function createVotingButtons(task) {
         </div>
     `;
 }
+
+// Rating Analytics Functions
+async function loadRatingAnalytics() {
+    try {
+        const baseUrl = document.getElementById('baseUrl').value;
+        const apiKey = document.getElementById('apiKey').value;
+        
+        log('📊 Загрузка аналитики рейтингов...');
+        
+        const response = await fetch(`${baseUrl}/api/internal/rating-analytics`, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            displayRatingAnalytics(data);
+            log('✅ Аналитика рейтингов загружена', 'success');
+        } else {
+            throw new Error('Failed to load rating analytics');
+        }
+    } catch (error) {
+        log(`❌ Ошибка загрузки аналитики: ${error.message}`, 'error');
+        displayRatingAnalyticsError(error.message);
+    }
+}
+
+function displayRatingAnalytics(data) {
+    const summary = data.summary;
+    const charts = data.charts;
+    const recentRatings = data.recent_ratings;
+    
+    // Update summary cards
+    document.getElementById('totalUpvotes').textContent = summary.upvotes;
+    document.getElementById('totalDownvotes').textContent = summary.downvotes;
+    document.getElementById('totalRated').textContent = summary.total_rated;
+    document.getElementById('qualityScore').textContent = summary.quality_score.toFixed(1);
+    
+    // Update percentages
+    document.getElementById('upvotePercentage').textContent = `${summary.upvote_percentage.toFixed(1)}%`;
+    document.getElementById('downvotePercentage').textContent = `${summary.downvote_percentage.toFixed(1)}%`;
+    document.getElementById('ratingCoverage').textContent = `${summary.rating_coverage.toFixed(1)}% покрытие`;
+    
+    // Update quality trend
+    const qualityTrendEl = document.getElementById('qualityTrend');
+    if (summary.quality_score > 50) {
+        qualityTrendEl.textContent = '📈 Отлично';
+        qualityTrendEl.style.color = '#28a745';
+    } else if (summary.quality_score > 0) {
+        qualityTrendEl.textContent = '📊 Хорошо';
+        qualityTrendEl.style.color = '#17a2b8';
+    } else if (summary.quality_score > -50) {
+        qualityTrendEl.textContent = '📉 Средне';
+        qualityTrendEl.style.color = '#ffc107';
+    } else {
+        qualityTrendEl.textContent = '📉 Плохо';
+        qualityTrendEl.style.color = '#dc3545';
+    }
+    
+    // Display charts
+    displayDailyChart(charts.daily);
+    displayHourlyChart(charts.hourly);
+    
+    // Display recent ratings
+    displayRecentRatings(recentRatings);
+}
+
+function displayDailyChart(dailyData) {
+    const chartContainer = document.getElementById('dailyRatingChart');
+    
+    if (!dailyData || dailyData.length === 0) {
+        chartContainer.innerHTML = '<div class="chart-placeholder">Нет данных за последние 7 дней</div>';
+        return;
+    }
+    
+    const maxValue = Math.max(...dailyData.map(d => Math.max(d.upvotes, d.downvotes))) || 1;
+    const chartHeight = 200;
+    
+    let chartHTML = '<div style="position: relative; height: 250px; display: flex; align-items: end; justify-content: space-around; padding: 25px 10px;">';
+    
+    dailyData.forEach((day, index) => {
+        const upvoteHeight = (day.upvotes / maxValue) * chartHeight;
+        const downvoteHeight = (day.downvotes / maxValue) * chartHeight;
+        const date = new Date(day.period).toLocaleDateString('ru-RU', { month: 'short', day: 'numeric' });
+        
+        chartHTML += `
+            <div style="display: flex; flex-direction: column; align-items: center; position: relative;">
+                <div style="display: flex; align-items: end; gap: 2px;">
+                    <div class="chart-bar chart-upvote" 
+                         style="height: ${upvoteHeight}px; width: 25px;"
+                         title="👍 ${day.upvotes} положительных оценок">
+                        <div class="chart-bar-value">${day.upvotes}</div>
+                    </div>
+                    <div class="chart-bar chart-downvote" 
+                         style="height: ${downvoteHeight}px; width: 25px;"
+                         title="👎 ${day.downvotes} отрицательных оценок">
+                        <div class="chart-bar-value">${day.downvotes}</div>
+                    </div>
+                </div>
+                <div class="chart-bar-label" style="margin-top: 10px;">${date}</div>
+            </div>
+        `;
+    });
+    
+    chartHTML += '</div>';
+    chartContainer.innerHTML = chartHTML;
+}
+
+function displayHourlyChart(hourlyData) {
+    const chartContainer = document.getElementById('hourlyRatingChart');
+    
+    if (!hourlyData || hourlyData.length === 0) {
+        chartContainer.innerHTML = '<div class="chart-placeholder">Нет данных за сегодня</div>';
+        return;
+    }
+    
+    const maxValue = Math.max(...hourlyData.map(d => Math.max(d.upvotes, d.downvotes))) || 1;
+    const chartHeight = 180;
+    
+    let chartHTML = '<div style="position: relative; height: 220px; display: flex; align-items: end; justify-content: space-around; padding: 25px 5px; overflow-x: auto;">';
+    
+    hourlyData.forEach((hour, index) => {
+        const upvoteHeight = (hour.upvotes / maxValue) * chartHeight;
+        const downvoteHeight = (hour.downvotes / maxValue) * chartHeight;
+        const hourLabel = hour.period.split(' ')[1] || hour.period;
+        
+        chartHTML += `
+            <div style="display: flex; flex-direction: column; align-items: center; position: relative; min-width: 30px;">
+                <div style="display: flex; align-items: end; gap: 1px;">
+                    <div class="chart-bar chart-upvote" 
+                         style="height: ${upvoteHeight}px; width: 12px;"
+                         title="👍 ${hour.upvotes} оценок в ${hourLabel}:00">
+                        ${hour.upvotes > 0 ? `<div class="chart-bar-value" style="font-size: 0.6em;">${hour.upvotes}</div>` : ''}
+                    </div>
+                    <div class="chart-bar chart-downvote" 
+                         style="height: ${downvoteHeight}px; width: 12px;"
+                         title="👎 ${hour.downvotes} оценок в ${hourLabel}:00">
+                        ${hour.downvotes > 0 ? `<div class="chart-bar-value" style="font-size: 0.6em;">${hour.downvotes}</div>` : ''}
+                    </div>
+                </div>
+                <div class="chart-bar-label" style="margin-top: 8px; font-size: 0.6em;">${hourLabel}</div>
+            </div>
+        `;
+    });
+    
+    chartHTML += '</div>';
+    chartContainer.innerHTML = chartHTML;
+}
+
+function displayRecentRatings(recentRatings) {
+    const container = document.getElementById('recentRatings');
+    
+    if (!recentRatings || recentRatings.length === 0) {
+        container.innerHTML = '<div class="rating-placeholder">Нет оцененных задач</div>';
+        return;
+    }
+    
+    let html = '';
+    recentRatings.forEach(task => {
+        const rating = task.user_rating;
+        const voteIcon = rating === 'upvote' ? '👍' : '👎';
+        const voteClass = rating === 'upvote' ? 'upvote' : 'downvote';
+        const timeAgo = getTimeAgo(task.updated_at);
+        const shortId = task.id.substring(0, 8) + '...';
+        const productPreview = task.product_data.length > 50 
+            ? task.product_data.substring(0, 50) + '...'
+            : task.product_data;
+        
+        html += `
+            <div class="rating-item">
+                <div class="rating-item-info">
+                    <div class="rating-item-task" title="${task.product_data}">
+                        ${productPreview}
+                    </div>
+                    <div class="rating-item-user">
+                        👤 ${task.user_id} | 🆔 ${shortId}
+                    </div>
+                </div>
+                <div class="rating-item-time">${timeAgo}</div>
+                <div class="rating-item-vote ${voteClass}" title="${rating === 'upvote' ? 'Положительная оценка' : 'Отрицательная оценка'}">
+                    ${voteIcon}
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function getTimeAgo(timestamp) {
+    const now = Date.now();
+    const diff = now - timestamp;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    
+    if (days > 0) return `${days}д назад`;
+    if (hours > 0) return `${hours}ч назад`;
+    if (minutes > 0) return `${minutes}м назад`;
+    return 'только что';
+}
+
+function displayRatingAnalyticsError(error) {
+    const containers = [
+        'ratingAnalyticsContainer',
+        'dailyRatingChart', 
+        'hourlyRatingChart',
+        'recentRatings'
+    ];
+    
+    containers.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.innerHTML = `<div class="rating-placeholder">❌ Ошибка загрузки: ${error}</div>`;
+        }
+    });
+    
+    // Reset summary values
+    ['totalUpvotes', 'totalDownvotes', 'totalRated', 'qualityScore'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '0';
+    });
+    
+    ['upvotePercentage', 'downvotePercentage', 'ratingCoverage'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '0%';
+    });
+    
+    const qualityTrendEl = document.getElementById('qualityTrend');
+    if (qualityTrendEl) {
+        qualityTrendEl.textContent = '❌';
+        qualityTrendEl.style.color = '#dc3545';
+    }
+}
+
+// === БАЗОВАЯ СТАТИСТИКА РЕЙТИНГОВ ===
+
+// Загрузка базовой статистики рейтингов
+async function loadBasicRatingStats() {
+    try {
+        log('📊 Загружаю базовую статистику рейтингов...', 'info');
+        
+        const response = await fetch('/api/internal/rating-stats', {
+            headers: {
+                'Authorization': 'Bearer dev-internal-key'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            displayBasicRatingStats(data);
+            log('✅ Базовая статистика рейтингов загружена', 'success');
+        } else {
+            throw new Error('Ответ сервера содержит ошибку');
+        }
+        
+    } catch (error) {
+        log(`❌ Ошибка загрузки базовой статистики: ${error.message}`, 'error');
+        displayBasicRatingStatsError();
+    }
+}
+
+// Загрузка статистики для конкретного пользователя
+async function loadUserRatingStats() {
+    const userIdInput = document.getElementById('userIdInput');
+    const userId = userIdInput.value.trim();
+    
+    if (!userId) {
+        log('⚠️ Введите ID пользователя', 'warning');
+        userIdInput.focus();
+        return;
+    }
+    
+    try {
+        log(`👤 Загружаю статистику для пользователя ${userId}...`, 'info');
+        
+        const response = await fetch(`/api/internal/rating-stats?user_id=${encodeURIComponent(userId)}`, {
+            headers: {
+                'Authorization': 'Bearer dev-internal-key'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            displayBasicRatingStats(data, userId);
+            displayUserTasks(data.tasks || []);
+            log(`✅ Статистика для пользователя ${userId} загружена`, 'success');
+        } else {
+            throw new Error('Ответ сервера содержит ошибку');
+        }
+        
+    } catch (error) {
+        log(`❌ Ошибка загрузки статистики пользователя: ${error.message}`, 'error');
+        displayBasicRatingStatsError();
+    }
+}
+
+// Очистка пользовательской статистики и возврат к общей
+function clearUserStats() {
+    document.getElementById('userIdInput').value = '';
+    document.getElementById('userTasksList').style.display = 'none';
+    loadBasicRatingStats();
+    log('🔄 Переключение на общую статистику', 'info');
+}
+
+// Отображение базовой статистики рейтингов
+function displayBasicRatingStats(data, userId = null) {
+    const totalElement = document.getElementById('basicTotalRated');
+    const upvotesElement = document.getElementById('basicUpvotes');
+    const downvotesElement = document.getElementById('basicDownvotes');
+    const upvotePercentageElement = document.getElementById('basicUpvotePercentage');
+    const downvotePercentageElement = document.getElementById('basicDownvotePercentage');
+    const labelElement = document.getElementById('basicStatsLabel');
+    
+    const total = data.total_rated || 0;
+    const upvotes = data.upvotes || 0;
+    const downvotes = data.downvotes || 0;
+    
+    // Подсчет процентов
+    const upvotePercentage = total > 0 ? ((upvotes / total) * 100).toFixed(1) : 0;
+    const downvotePercentage = total > 0 ? ((downvotes / total) * 100).toFixed(1) : 0;
+    
+    // Обновление значений
+    totalElement.textContent = total;
+    upvotesElement.textContent = upvotes;
+    downvotesElement.textContent = downvotes;
+    upvotePercentageElement.textContent = `${upvotePercentage}%`;
+    downvotePercentageElement.textContent = `${downvotePercentage}%`;
+    
+    // Обновление метки
+    if (userId) {
+        labelElement.textContent = `Пользователь: ${userId}`;
+    } else {
+        labelElement.textContent = 'Общая статистика';
+    }
+    
+    // Анимация обновления значений
+    animateValue(totalElement, 0, total, 1000);
+    animateValue(upvotesElement, 0, upvotes, 1000);
+    animateValue(downvotesElement, 0, downvotes, 1000);
+}
+
+// Отображение задач пользователя
+function displayUserTasks(tasks) {
+    const container = document.getElementById('userTasksList');
+    const tasksList = document.getElementById('userTasks');
+    
+    if (!tasks || tasks.length === 0) {
+        tasksList.innerHTML = '<div class="tasks-placeholder">У пользователя нет оцененных задач</div>';
+        container.style.display = 'block';
+        return;
+    }
+    
+    const tasksHtml = tasks.map(task => {
+        const ratingIcon = task.user_rating === 'upvote' ? '👍' : '👎';
+        const ratingClass = task.user_rating === 'upvote' ? 'upvote' : 'downvote';
+        const createdAt = new Date(task.created_at).toLocaleString('ru-RU');
+        const completedAt = task.completed_at ? new Date(task.completed_at).toLocaleString('ru-RU') : 'Не завершена';
+        
+        // Обрезаем длинные тексты
+        const shortQuery = task.query && task.query.length > 100 ? 
+            task.query.substring(0, 100) + '...' : (task.query || 'Нет запроса');
+        const shortResponse = task.response && task.response.length > 200 ? 
+            task.response.substring(0, 200) + '...' : (task.response || 'Нет ответа');
+        
+        return `
+            <div class="user-task-item">
+                <div class="user-task-header">
+                    <span class="user-task-id">ID: ${task.id}</span>
+                    <span class="user-task-rating ${ratingClass}">${ratingIcon}</span>
+                </div>
+                <div class="user-task-query">
+                    <strong>Запрос:</strong> ${shortQuery}
+                </div>
+                <div class="user-task-response">
+                    <strong>Ответ:</strong> ${shortResponse}
+                </div>
+                <div class="user-task-meta">
+                    <span><strong>Создана:</strong> ${createdAt}</span>
+                    <span><strong>Завершена:</strong> ${completedAt}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    tasksList.innerHTML = tasksHtml;
+    container.style.display = 'block';
+}
+
+// Отображение ошибки базовой статистики
+function displayBasicRatingStatsError() {
+    document.getElementById('basicTotalRated').textContent = '?';
+    document.getElementById('basicUpvotes').textContent = '?';
+    document.getElementById('basicDownvotes').textContent = '?';
+    document.getElementById('basicUpvotePercentage').textContent = '?%';
+    document.getElementById('basicDownvotePercentage').textContent = '?%';
+    document.getElementById('basicStatsLabel').textContent = 'Ошибка загрузки';
+    document.getElementById('userTasksList').style.display = 'none';
+}
+
+// Анимация изменения числовых значений
+function animateValue(element, start, end, duration) {
+    if (start === end) return;
+    
+    const range = end - start;
+    const startTime = performance.now();
+    
+    function updateValue(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        
+        // Easing функция для плавной анимации
+        const easeProgress = 1 - Math.pow(1 - progress, 3);
+        const current = Math.round(start + (range * easeProgress));
+        
+        element.textContent = current;
+        
+        if (progress < 1) {
+            requestAnimationFrame(updateValue);
+        }
+    }
+    
+    requestAnimationFrame(updateValue);
+}
+
+// Обработчик для Enter в поле ввода пользователя
+document.addEventListener('DOMContentLoaded', function() {
+    const userIdInput = document.getElementById('userIdInput');
+    if (userIdInput) {
+        userIdInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                loadUserRatingStats();
+            }
+        });
+    }
+    
+    // Загружаем базовую статистику при загрузке страницы
+    loadBasicRatingStats();
+});

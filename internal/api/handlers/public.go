@@ -222,10 +222,11 @@ func (h *PublicHandlers) GetResult(w http.ResponseWriter, r *http.Request) {
 
 	// Return task status and result (matching TypeScript response format)
 	data := map[string]interface{}{
-		"success":   true,
-		"status":    task.Status,
-		"result":    task.Result,
-		"createdAt": time.Unix(0, task.CreatedAt*int64(time.Millisecond)).Format(time.RFC3339),
+		"success":     true,
+		"status":      task.Status,
+		"result":      task.Result,
+		"createdAt":   time.Unix(0, task.CreatedAt*int64(time.Millisecond)).Format(time.RFC3339),
+		"user_rating": task.UserRating,
 	}
 
 	if task.CompletedAt != nil {
