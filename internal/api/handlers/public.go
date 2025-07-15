@@ -332,7 +332,7 @@ func (h *PublicHandlers) GetUserData(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// If task is active (processing or pending), generate result token
-		if latestTask.Status == "processing" || latestTask.Status == "pending" {
+		if latestTask.Status == "processing" || latestTask.Status == "pending" || latestTask.Status == "completed" {
 			resultPayload := &database.JWTPayload{
 				Issuer:   "llm-proxy",
 				Audience: "llm-proxy-api",
