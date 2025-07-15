@@ -530,7 +530,7 @@ async function getResult() {
                     const taskForVoting = {
                         id: currentTaskId,
                         status: data.status,
-                        user_rating: data.user_rating || null
+                        rating: data.rating || null
                     };
                     votingContainer.innerHTML = createVotingButtons(taskForVoting);
                 } else {
@@ -883,7 +883,7 @@ function displayTaskResult(taskData) {
         const taskForVoting = {
             id: taskData.taskId,
             status: taskData.status,
-            user_rating: taskData.user_rating || null
+            rating: taskData.rating || null
         };
         votingContainer.innerHTML = createVotingButtons(taskForVoting);
     } else {
@@ -1873,7 +1873,7 @@ async function voteTask(taskId, voteType) {
         }
 
         const data = await response.json();
-        log(`✅ Голос принят: ${data.user_rating || 'убран'}`, 'success');
+        log(`✅ Голос принят: ${data.rating || 'убран'}`, 'success');
         
         // Обновляем список задач в админ панели
         await refreshTaskList();
@@ -1886,7 +1886,7 @@ async function voteTask(taskId, voteType) {
             const taskForVoting = {
                 id: taskId,
                 status: 'completed',
-                user_rating: data.user_rating || null
+                rating: data.rating || null
             };
             userVotingContainer.innerHTML = createVotingButtons(taskForVoting);
         }
@@ -1895,7 +1895,7 @@ async function voteTask(taskId, voteType) {
             const taskForVoting = {
                 id: taskId,
                 status: 'completed',
-                user_rating: data.user_rating || null
+                rating: data.rating || null
             };
             finalResultVotingContainer.innerHTML = createVotingButtons(taskForVoting);
         }
@@ -1912,7 +1912,7 @@ function createVotingButtons(task) {
         return '';
     }
 
-    const currentRating = task.user_rating;
+    const currentRating = task.rating;
     const upvoteClass = currentRating === 'upvote' ? 'vote-active' : '';
     const downvoteClass = currentRating === 'downvote' ? 'vote-active' : '';
 
@@ -2107,7 +2107,7 @@ function displayRecentRatings(recentRatings) {
     
     let html = '';
     recentRatings.forEach(task => {
-        const rating = task.user_rating;
+        const rating = task.rating;
         const voteIcon = rating === 'upvote' ? '👍' : '👎';
         const voteClass = rating === 'upvote' ? 'upvote' : 'downvote';
         const timeAgo = getTimeAgo(task.updated_at);
@@ -2312,8 +2312,8 @@ function displayUserTasks(tasks) {
     }
     
     const tasksHtml = tasks.map(task => {
-        const ratingIcon = task.user_rating === 'upvote' ? '👍' : '👎';
-        const ratingClass = task.user_rating === 'upvote' ? 'upvote' : 'downvote';
+        const ratingIcon = task.rating === 'upvote' ? '👍' : '👎';
+        const ratingClass = task.rating === 'upvote' ? 'upvote' : 'downvote';
         const createdAt = new Date(task.created_at).toLocaleString('ru-RU');
         const completedAt = task.completed_at ? new Date(task.completed_at).toLocaleString('ru-RU') : 'Не завершена';
         

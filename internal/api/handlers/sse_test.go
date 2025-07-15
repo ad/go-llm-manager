@@ -47,7 +47,7 @@ func setupTestDB(t *testing.T) *database.DB {
 		ollama_params TEXT,
 		estimated_duration INTEGER DEFAULT 300000, -- 5 minutes default
 		actual_duration INTEGER,
-		user_rating TEXT CHECK (user_rating IN ('upvote', 'downvote', NULL))
+		rating TEXT CHECK (rating IN ('upvote', 'downvote', NULL))
 	);
 	
 	CREATE TABLE rate_limits (
@@ -198,7 +198,7 @@ func GetTask(db *database.DB, id string) (*database.Task, error) {
 		SELECT id, user_id, product_data, status, result, error_message,
 			   created_at, updated_at, completed_at, priority, retry_count,
 			   max_retries, processor_id, processing_started_at, heartbeat_at,
-			   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
+			   timeout_at, ollama_params, estimated_duration, actual_duration, rating
 		FROM tasks WHERE id = ?
 	`
 

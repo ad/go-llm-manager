@@ -10,7 +10,7 @@ func setupTestDB(t *testing.T) *DB {
 		t.Fatalf("failed to create test db: %v", err)
 	}
 
-	// Run migrations to set up the database schema including user_rating column
+	// Run migrations to set up the database schema including rating column
 	err = db.RunMigrations()
 	if err != nil {
 		t.Fatalf("failed to run migrations: %v", err)
@@ -24,7 +24,7 @@ func TestUpdateTaskRating(t *testing.T) {
 	defer db.Close()
 
 	// Create a test user and task
-	userID := "test_user_rating"
+	userID := "test_rating"
 	task := &Task{
 		ID:          "task_rating_test",
 		UserID:      userID,

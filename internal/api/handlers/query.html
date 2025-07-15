@@ -175,11 +175,11 @@
                 }
 
                 const data = await response.json();
-                currentUserRating = data.user_rating;
+                currentUserRating = data.rating;
                 updateVotingButtons();
                 
-                if (data.user_rating) {
-                    log(`✅ Голос отправлен: ${data.user_rating}`);
+                if (data.rating) {
+                    log(`✅ Голос отправлен: ${data.rating}`);
                 } else {
                     log(`✅ Голос убран`);
                 }
@@ -255,7 +255,7 @@
                     // Show voting buttons if task is completed
                     if (task.status === 'completed') {
                         currentTaskId = task.id;
-                        currentUserRating = task.user_rating || null;
+                        currentUserRating = task.rating || null;
                         taskToken = task.token || tempToken; // Use task token if available, otherwise temp token
                         showVotingButtons();
                         log('🗳️ Кнопки голосования доступны для завершенной задачи');
@@ -349,7 +349,7 @@
                         setResult('🎉 ' + JSON.stringify(data.data, null, 2));
                         
                         // Show voting buttons for completed task
-                        currentUserRating = data.data.user_rating || null;
+                        currentUserRating = data.data.rating || null;
                         showVotingButtons();
                         
                         taskFinalized = true;

@@ -21,10 +21,10 @@ func TestFullTaskLifecycleWithVoting(t *testing.T) {
 	// Настройка тестовой базы данных
 	db := database.NewTestDB(t)
 
-	// Добавляем поле user_rating если его нет (для совместимости)
-	_, err := db.Exec("ALTER TABLE tasks ADD COLUMN user_rating TEXT CHECK (user_rating IN ('upvote', 'downvote', NULL))")
+	// Добавляем поле rating если его нет (для совместимости)
+	_, err := db.Exec("ALTER TABLE tasks ADD COLUMN rating TEXT CHECK (rating IN ('upvote', 'downvote', NULL))")
 	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
-		t.Fatalf("Failed to add user_rating column: %v", err)
+		t.Fatalf("Failed to add rating column: %v", err)
 	}
 
 	// Настройка конфигурации и аутентификации
@@ -133,7 +133,7 @@ func TestFullTaskLifecycleWithVoting(t *testing.T) {
 			Success    bool    `json:"success"`
 			Status     string  `json:"status"`
 			Result     string  `json:"result"`
-			UserRating *string `json:"user_rating"`
+			UserRating *string `json:"rating"`
 		}
 		if err := json.NewDecoder(rr.Body).Decode(&resultResp); err != nil {
 			t.Fatalf("Failed to decode result response: %v", err)
@@ -291,10 +291,10 @@ func TestRatingStatsIntegration(t *testing.T) {
 	// Настройка тестовой базы данных
 	db := database.NewTestDB(t)
 
-	// Добавляем поле user_rating если его нет
-	_, err := db.Exec("ALTER TABLE tasks ADD COLUMN user_rating TEXT CHECK (user_rating IN ('upvote', 'downvote', NULL))")
+	// Добавляем поле rating если его нет
+	_, err := db.Exec("ALTER TABLE tasks ADD COLUMN rating TEXT CHECK (rating IN ('upvote', 'downvote', NULL))")
 	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
-		t.Fatalf("Failed to add user_rating column: %v", err)
+		t.Fatalf("Failed to add rating column: %v", err)
 	}
 
 	cfg := &config.Config{
@@ -397,9 +397,9 @@ func TestRatingStatsIntegration(t *testing.T) {
 func TestVotingEdgeCases(t *testing.T) {
 	db := database.NewTestDB(t)
 
-	_, err := db.Exec("ALTER TABLE tasks ADD COLUMN user_rating TEXT CHECK (user_rating IN ('upvote', 'downvote', NULL))")
+	_, err := db.Exec("ALTER TABLE tasks ADD COLUMN rating TEXT CHECK (rating IN ('upvote', 'downvote', NULL))")
 	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
-		t.Fatalf("Failed to add user_rating column: %v", err)
+		t.Fatalf("Failed to add rating column: %v", err)
 	}
 
 	cfg := &config.Config{

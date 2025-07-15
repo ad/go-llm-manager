@@ -164,7 +164,7 @@ func (db *DB) RunMigrations() error {
 		ollama_params TEXT,
 		estimated_duration INTEGER DEFAULT 300000,
 		actual_duration INTEGER,
-		user_rating TEXT CHECK (user_rating IN ('upvote', 'downvote', NULL))
+		rating TEXT CHECK (rating IN ('upvote', 'downvote', NULL))
 	);
 
 	-- Rate limiting
@@ -192,7 +192,7 @@ func (db *DB) RunMigrations() error {
 	CREATE INDEX IF NOT EXISTS idx_tasks_processor_id ON tasks(processor_id);
 	CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at);
 	CREATE INDEX IF NOT EXISTS idx_tasks_timeout_at ON tasks(timeout_at);
-	CREATE INDEX IF NOT EXISTS idx_tasks_user_rating ON tasks(user_rating);
+	CREATE INDEX IF NOT EXISTS idx_tasks_rating ON tasks(rating);
 	CREATE INDEX IF NOT EXISTS idx_rate_limits_window_start ON rate_limits(window_start);
 	CREATE INDEX IF NOT EXISTS idx_processor_metrics_last_updated ON processor_metrics(last_updated);
 	`

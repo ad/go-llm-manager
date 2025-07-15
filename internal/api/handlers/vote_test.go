@@ -30,11 +30,11 @@ func TestVoteTask(t *testing.T) {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 
-	// Add user_rating column for test (since our test uses in-memory DB)
-	_, err = db.Exec("ALTER TABLE tasks ADD COLUMN user_rating TEXT CHECK (user_rating IN ('upvote', 'downvote', NULL))")
+	// Add rating column for test (since our test uses in-memory DB)
+	_, err = db.Exec("ALTER TABLE tasks ADD COLUMN rating TEXT CHECK (rating IN ('upvote', 'downvote', NULL))")
 	if err != nil {
 		// Column might already exist, ignore error
-		t.Logf("Note: user_rating column might already exist: %v", err)
+		t.Logf("Note: rating column might already exist: %v", err)
 	}
 
 	// Setup auth
@@ -108,7 +108,7 @@ func TestVoteTask(t *testing.T) {
 		}
 
 		if response.UserRating == nil || *response.UserRating != "upvote" {
-			t.Errorf("Expected user_rating to be 'upvote', got %v", response.UserRating)
+			t.Errorf("Expected rating to be 'upvote', got %v", response.UserRating)
 		}
 
 		// Verify in database
@@ -118,7 +118,7 @@ func TestVoteTask(t *testing.T) {
 		}
 
 		if updatedTask.UserRating == nil || *updatedTask.UserRating != "upvote" {
-			t.Errorf("Expected task user_rating to be 'upvote', got %v", updatedTask.UserRating)
+			t.Errorf("Expected task rating to be 'upvote', got %v", updatedTask.UserRating)
 		}
 	})
 
@@ -160,7 +160,7 @@ func TestVoteTask(t *testing.T) {
 		}
 
 		if response.UserRating != nil {
-			t.Errorf("Expected user_rating to be nil (vote removed), got %v", response.UserRating)
+			t.Errorf("Expected rating to be nil (vote removed), got %v", response.UserRating)
 		}
 
 		// Verify in database
@@ -170,7 +170,7 @@ func TestVoteTask(t *testing.T) {
 		}
 
 		if updatedTask.UserRating != nil {
-			t.Errorf("Expected task user_rating to be nil (vote removed), got %v", updatedTask.UserRating)
+			t.Errorf("Expected task rating to be nil (vote removed), got %v", updatedTask.UserRating)
 		}
 	})
 

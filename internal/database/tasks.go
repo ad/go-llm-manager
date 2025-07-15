@@ -87,7 +87,7 @@ func (db *DB) GetTask(id string) (*Task, error) {
 			SELECT id, user_id, product_data, status, result, error_message,
 				   created_at, updated_at, completed_at, priority, retry_count,
 				   max_retries, processor_id, processing_started_at, heartbeat_at,
-				   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
+				   timeout_at, ollama_params, estimated_duration, actual_duration, rating
 			FROM tasks WHERE id = ?
 		`
 
@@ -210,7 +210,7 @@ func (db *DB) GetAllTasks(userID *string, limit, offset int) ([]*Task, error) {
 			SELECT id, user_id, product_data, status, result, error_message,
 				   created_at, updated_at, completed_at, priority, retry_count,
 				   max_retries, processor_id, processing_started_at, heartbeat_at,
-				   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
+				   timeout_at, ollama_params, estimated_duration, actual_duration, rating
 			FROM tasks 
 			WHERE user_id = ?
 			ORDER BY created_at DESC 
@@ -222,7 +222,7 @@ func (db *DB) GetAllTasks(userID *string, limit, offset int) ([]*Task, error) {
 			SELECT id, user_id, product_data, status, result, error_message,
 				   created_at, updated_at, completed_at, priority, retry_count,
 				   max_retries, processor_id, processing_started_at, heartbeat_at,
-				   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
+				   timeout_at, ollama_params, estimated_duration, actual_duration, rating
 			FROM tasks 
 			ORDER BY created_at DESC 
 			LIMIT ? OFFSET ?
@@ -345,7 +345,7 @@ func (db *DB) GetUserLatestTask(userID string) (*Task, error) {
 			SELECT id, user_id, product_data, status, result, error_message,
 				   created_at, updated_at, completed_at, priority, retry_count,
 				   max_retries, processor_id, processing_started_at, heartbeat_at,
-				   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
+				   timeout_at, ollama_params, estimated_duration, actual_duration, rating
 			FROM tasks 
 			WHERE user_id = ? 
 			ORDER BY created_at DESC 
@@ -558,7 +558,7 @@ func (db *DB) UpdateTaskRating(taskID, userID string, rating *string) error {
 		// Update the rating
 		updateQuery := `
 			UPDATE tasks 
-			SET user_rating = ?, updated_at = ?
+			SET rating = ?, updated_at = ?
 			WHERE id = ? AND user_id = ?
 		`
 
@@ -579,18 +579,18 @@ func (db *DB) GetTasksRatingStats(userID *string) (map[string]int, error) {
 
 	if userID != nil {
 		query = `
-			SELECT user_rating, COUNT(*) as count 
+			SELECT rating, COUNT(*) as count 
 			FROM tasks 
-			WHERE user_id = ? AND user_rating IS NOT NULL
-			GROUP BY user_rating
+			WHERE user_id = ? AND rating IS NOT NULL
+			GROUP BY rating
 		`
 		args = []interface{}{*userID}
 	} else {
 		query = `
-			SELECT user_rating, COUNT(*) as count 
+			SELECT rating, COUNT(*) as count 
 			FROM tasks 
-			WHERE user_rating IS NOT NULL
-			GROUP BY user_rating
+			WHERE rating IS NOT NULL
+			GROUP BY rating
 		`
 		args = []interface{}{}
 	}
@@ -624,9 +624,9 @@ func (db *DB) GetUserRatedTasks(userID string, rating *string, limit, offset int
 			SELECT id, user_id, product_data, status, result, error_message,
 				   created_at, updated_at, completed_at, priority, retry_count,
 				   max_retries, processor_id, processing_started_at, heartbeat_at,
-				   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
+				   timeout_at, ollama_params, estimated_duration, actual_duration, rating
 			FROM tasks 
-			WHERE user_id = ? AND user_rating = ?
+			WHERE user_id = ? AND rating = ?
 			ORDER BY created_at DESC 
 			LIMIT ? OFFSET ?
 		`
@@ -636,9 +636,9 @@ func (db *DB) GetUserRatedTasks(userID string, rating *string, limit, offset int
 			SELECT id, user_id, product_data, status, result, error_message,
 				   created_at, updated_at, completed_at, priority, retry_count,
 				   max_retries, processor_id, processing_started_at, heartbeat_at,
-				   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
+				   timeout_at, ollama_params, estimated_duration, actual_duration, rating
 			FROM tasks 
-			WHERE user_id = ? AND user_rating IS NOT NULL
+			WHERE user_id = ? AND rating IS NOT NULL
 			ORDER BY created_at DESC 
 			LIMIT ? OFFSET ?
 		`
@@ -684,9 +684,9 @@ func (db *DB) GetRatingStatsByPeriod(period string, count int) ([]map[string]int
 		WITH periods AS (
 			SELECT %s as period_start,
 				   strftime('%s', %s) as period_label,
-				   SUM(CASE WHEN user_rating = 'upvote' THEN 1 ELSE 0 END) as upvotes,
-				   SUM(CASE WHEN user_rating = 'downvote' THEN 1 ELSE 0 END) as downvotes,
-				   COUNT(CASE WHEN user_rating IS NOT NULL THEN 1 END) as total_rated
+				   SUM(CASE WHEN rating = 'upvote' THEN 1 ELSE 0 END) as upvotes,
+				   SUM(CASE WHEN rating = 'downvote' THEN 1 ELSE 0 END) as downvotes,
+				   COUNT(CASE WHEN rating IS NOT NULL THEN 1 END) as total_rated
 			FROM tasks 
 			WHERE status = 'completed' 
 			  AND completed_at IS NOT NULL
@@ -738,9 +738,9 @@ func (db *DB) GetRecentRatedTasks(limit int) ([]*Task, error) {
 		SELECT id, user_id, product_data, status, result, error_message,
 			   created_at, updated_at, completed_at, priority, retry_count,
 			   max_retries, processor_id, processing_started_at, heartbeat_at,
-			   timeout_at, ollama_params, estimated_duration, actual_duration, user_rating
+			   timeout_at, ollama_params, estimated_duration, actual_duration, rating
 		FROM tasks 
-		WHERE user_rating IS NOT NULL AND status = 'completed'
+		WHERE rating IS NOT NULL AND status = 'completed'
 		ORDER BY updated_at DESC 
 		LIMIT ?
 	`

@@ -138,7 +138,7 @@
 ```json
 {
   "success": true,
-  "user_rating": "upvote" | "downvote" | null
+  "rating": "upvote" | "downvote" | null
 }
 ```
 - Примеры использования:
@@ -395,7 +395,7 @@ curl -X POST "http://localhost:8080/api/tasks/task-123/vote" \
     {
       "id": "task-456",
       "status": "completed",
-      "user_rating": "upvote",
+      "rating": "upvote",
       "created_at": "2024-06-26T12:00:00Z",
       ...
     }
@@ -418,7 +418,7 @@ curl -X POST "http://localhost:8080/api/tasks/task-123/vote" \
   "created_at": 1719400000000,
   "priority": 0,
   "ollama_params": "{...}",
-  "user_rating": "upvote|downvote|null"
+  "rating": "upvote|downvote|null"
 }
 ```
 
