@@ -2188,11 +2188,13 @@ function displayRatingAnalyticsError(error) {
 // Загрузка базовой статистики рейтингов
 async function loadBasicRatingStats() {
     try {
+        const apiKey = document.getElementById('apiKey').value;
+
         log('📊 Загружаю базовую статистику рейтингов...', 'info');
         
         const response = await fetch('/api/internal/rating-stats', {
             headers: {
-                'Authorization': 'Bearer dev-internal-key'
+                'Authorization': `Bearer ${apiKey}`
             }
         });
         
@@ -2227,11 +2229,13 @@ async function loadUserRatingStats() {
     }
     
     try {
+        const apiKey = document.getElementById('apiKey').value;
+        
         log(`👤 Загружаю статистику для пользователя ${userId}...`, 'info');
         
         const response = await fetch(`/api/internal/rating-stats?user_id=${encodeURIComponent(userId)}`, {
             headers: {
-                'Authorization': 'Bearer dev-internal-key'
+                'Authorization': `Bearer ${apiKey}`
             }
         });
         
