@@ -111,8 +111,8 @@ func main() {
 	))
 
 	// Task voting endpoint (JWT-protected)
-	mux.Handle("/api/tasks/", middleware.Chain(
-		handleTaskVote(publicHandlers),
+	mux.Handle("/api/tasks/vote", middleware.Chain(
+		http.HandlerFunc(publicHandlers.VoteTask),
 		middleware.Logging,
 		middleware.CORS,
 		middleware.ContentType,
@@ -311,25 +311,5 @@ func requireAPIKey(apiKeyAuth *auth.APIKeyManager) func(http.Handler) http.Handl
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(`{"error": "Invalid or missing API key"}`))
 		})
-	}
-}
-
-// Helper function to handle path patterns with parameters
-func handleTaskVote(publicHandlers *handlers.PublicHandlers) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Parse path: /api/tasks/{id}/vote
-		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-
-		// Expected: ["api", "tasks", "{task_id}", "vote"]
-		if len(parts) == 4 && parts[0] == "api" && parts[1] == "tasks" && parts[3] == "vote" {
-			// parts[2] contains the task ID, we can validate it's not empty
-			if parts[2] != "" {
-				publicHandlers.VoteTask(w, r)
-			} else {
-				http.NotFound(w, r)
-			}
-		} else {
-			http.NotFound(w, r)
-		}
 	}
 }
