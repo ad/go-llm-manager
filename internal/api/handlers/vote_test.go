@@ -74,6 +74,7 @@ func TestVoteTask(t *testing.T) {
 		// Generate JWT token
 		payload := &database.JWTPayload{
 			UserID: userID,
+			TaskID: taskID,
 		}
 		token, err := jwtAuth.GenerateToken(payload, 3600)
 		if err != nil {
@@ -86,7 +87,7 @@ func TestVoteTask(t *testing.T) {
 		}
 		reqBody, _ := json.Marshal(voteReq)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/tasks/"+taskID+"/vote", bytes.NewReader(reqBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/tasks/vote", bytes.NewReader(reqBody))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 
@@ -126,6 +127,7 @@ func TestVoteTask(t *testing.T) {
 		// Generate JWT token
 		payload := &database.JWTPayload{
 			UserID: userID,
+			TaskID: taskID,
 		}
 		token, err := jwtAuth.GenerateToken(payload, 3600)
 		if err != nil {
@@ -138,7 +140,7 @@ func TestVoteTask(t *testing.T) {
 		}
 		reqBody, _ := json.Marshal(voteReq)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/tasks/"+taskID+"/vote", bytes.NewReader(reqBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/tasks/vote", bytes.NewReader(reqBody))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 
@@ -180,7 +182,7 @@ func TestVoteTask(t *testing.T) {
 		}
 		reqBody, _ := json.Marshal(voteReq)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/tasks/"+taskID+"/vote", bytes.NewReader(reqBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/tasks/vote", bytes.NewReader(reqBody))
 		req.Header.Set("Content-Type", "application/json")
 		// No Authorization header
 
@@ -196,6 +198,7 @@ func TestVoteTask(t *testing.T) {
 		// Generate JWT token for different user
 		payload := &database.JWTPayload{
 			UserID: "other-user",
+			TaskID: taskID,
 		}
 		token, err := jwtAuth.GenerateToken(payload, 3600)
 		if err != nil {
@@ -207,7 +210,7 @@ func TestVoteTask(t *testing.T) {
 		}
 		reqBody, _ := json.Marshal(voteReq)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/tasks/"+taskID+"/vote", bytes.NewReader(reqBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/tasks/vote", bytes.NewReader(reqBody))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 
@@ -239,6 +242,7 @@ func TestVoteTask(t *testing.T) {
 		// Generate JWT token
 		payload := &database.JWTPayload{
 			UserID: userID,
+			TaskID: pendingTaskID,
 		}
 		token, err := jwtAuth.GenerateToken(payload, 3600)
 		if err != nil {
@@ -250,7 +254,7 @@ func TestVoteTask(t *testing.T) {
 		}
 		reqBody, _ := json.Marshal(voteReq)
 
-		req := httptest.NewRequest(http.MethodPost, "/api/tasks/"+pendingTaskID+"/vote", bytes.NewReader(reqBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/tasks/vote", bytes.NewReader(reqBody))
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
 

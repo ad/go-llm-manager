@@ -144,13 +144,13 @@
 - Примеры использования:
 ```bash
 # Поставить положительную оценку
-curl -X POST "http://localhost:8080/api/tasks/task-123/vote" \
+curl -X POST "http://localhost:8080/api/tasks/vote" \
   -H "Authorization: Bearer <jwt_token>" \
   -H "Content-Type: application/json" \
   -d '{"vote_type": "upvote"}'
 
 # Убрать оценку (повторный upvote)
-curl -X POST "http://localhost:8080/api/tasks/task-123/vote" \
+curl -X POST "http://localhost:8080/api/tasks/vote" \
   -H "Authorization: Bearer <jwt_token>" \
   -H "Content-Type: application/json" \
   -d '{"vote_type": "upvote"}'

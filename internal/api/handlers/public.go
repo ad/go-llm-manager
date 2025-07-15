@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/ad/go-llm-manager/internal/auth"
@@ -306,6 +305,7 @@ func (h *PublicHandlers) GetUserData(w http.ResponseWriter, r *http.Request) {
 			"priority":     latestTask.Priority,
 			"created_at":   time.Unix(0, latestTask.CreatedAt*int64(time.Millisecond)).Format(time.RFC3339),
 			"updated_at":   time.Unix(0, latestTask.UpdatedAt*int64(time.Millisecond)).Format(time.RFC3339),
+			"rating":       latestTask.UserRating,
 		}
 
 		if latestTask.Result != nil {
@@ -357,7 +357,7 @@ func (h *PublicHandlers) GetUserData(w http.ResponseWriter, r *http.Request) {
 	utils.SendJSON(w, http.StatusOK, data)
 }
 
-// POST /api/tasks/{id}/vote - Vote on a task (JWT auth required)
+// POST /api/tasks/vote - Vote on a task (JWT auth required)
 func (h *PublicHandlers) VoteTask(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		utils.SendError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -381,19 +381,9 @@ func (h *PublicHandlers) VoteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract task ID from URL path
-	// Parse path: /api/tasks/{id}/vote
-	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-
-	// Expected: ["api", "tasks", "{task_id}", "vote"]
-	if len(parts) != 4 || parts[0] != "api" || parts[1] != "tasks" || parts[3] != "vote" {
-		utils.SendError(w, http.StatusBadRequest, "Invalid URL format")
-		return
-	}
-
-	taskID := parts[2]
+	taskID := payload.TaskID
 	if taskID == "" {
-		utils.SendError(w, http.StatusBadRequest, "Missing task ID")
+		utils.SendError(w, http.StatusBadRequest, "Invalid token: missing taskId")
 		return
 	}
 

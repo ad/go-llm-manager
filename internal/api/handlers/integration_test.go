@@ -156,9 +156,9 @@ func TestFullTaskLifecycleWithVoting(t *testing.T) {
 		}
 		voteReqBody, _ := json.Marshal(voteReq)
 
-		req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/tasks/%s/vote", createResp.TaskID), bytes.NewReader(voteReqBody))
+		req = httptest.NewRequest(http.MethodPost, "/api/tasks/vote", bytes.NewReader(voteReqBody))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+tokenResp.Token) // Используем исходный JWT токен
+		req.Header.Set("Authorization", "Bearer "+createResp.Token) // Используем исходный JWT токен
 		rr = httptest.NewRecorder()
 
 		publicHandlers.VoteTask(rr, req)
@@ -222,9 +222,9 @@ func TestFullTaskLifecycleWithVoting(t *testing.T) {
 		voteReq["vote_type"] = "downvote"
 		voteReqBody, _ = json.Marshal(voteReq)
 
-		req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/tasks/%s/vote", createResp.TaskID), bytes.NewReader(voteReqBody))
+		req = httptest.NewRequest(http.MethodPost, "/api/tasks/vote", bytes.NewReader(voteReqBody))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+tokenResp.Token)
+		req.Header.Set("Authorization", "Bearer "+createResp.Token)
 		rr = httptest.NewRecorder()
 
 		publicHandlers.VoteTask(rr, req)
@@ -248,9 +248,9 @@ func TestFullTaskLifecycleWithVoting(t *testing.T) {
 		voteReq["vote_type"] = "downvote" // Повторное нажатие должно убрать рейтинг
 		voteReqBody, _ = json.Marshal(voteReq)
 
-		req = httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/tasks/%s/vote", createResp.TaskID), bytes.NewReader(voteReqBody))
+		req = httptest.NewRequest(http.MethodPost, "/api/tasks/vote", bytes.NewReader(voteReqBody))
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+tokenResp.Token)
+		req.Header.Set("Authorization", "Bearer "+createResp.Token)
 		rr = httptest.NewRecorder()
 
 		publicHandlers.VoteTask(rr, req)
@@ -445,7 +445,7 @@ func TestVotingEdgeCases(t *testing.T) {
 		voteReq := map[string]string{"vote_type": "upvote"}
 		voteReqBody, _ := json.Marshal(voteReq)
 
-		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/tasks/%s/vote", taskID), bytes.NewReader(voteReqBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/tasks/vote", bytes.NewReader(voteReqBody))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+token)
 		rr := httptest.NewRecorder()
@@ -498,7 +498,7 @@ func TestVotingEdgeCases(t *testing.T) {
 		voteReq := map[string]string{"vote_type": "upvote"}
 		voteReqBody, _ := json.Marshal(voteReq)
 
-		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/tasks/%s/vote", taskID), bytes.NewReader(voteReqBody))
+		req := httptest.NewRequest(http.MethodPost, "/api/tasks/vote", bytes.NewReader(voteReqBody))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+token)
 		rr := httptest.NewRecorder()

@@ -1856,7 +1856,7 @@ async function voteTask(taskId, voteType) {
 
         log(`🗳️ Голосование за задачу ${taskId}: ${voteType}`);
 
-        const response = await fetch(`${baseUrl}/api/tasks/${taskId}/vote`, {
+        const response = await fetch(`${baseUrl}/api/tasks/vote`, {
             method: 'POST',
             headers: {
                 'Authorization': authHeader,

@@ -4,7 +4,7 @@
 
 **Выполнено:**
 - ✅ База данных: миграции, модели, функции
-- ✅ API: POST `/api/tasks/{id}/vote` с JWT авторизацией 
+- ✅ API: POST `/api/tasks/vote` с JWT авторизацией 
 - ✅ Внутренний API: GET `/api/internal/rating-stats` для статистики
 - ✅ Внутренний API: GET `/api/internal/rating-analytics` для детальной аналитики  
 - ✅ UI: базовая статистика рейтингов в админ панели (/admin)
@@ -92,14 +92,14 @@ type VoteResponse struct {
 - [x] **Файл**: `internal/api/handlers/public.go`
 - [x] Добавить функцию `VoteTask(w http.ResponseWriter, r *http.Request)` (реализовано как VoteTask):
   - Методы: POST
-  - Аутентификация: JWT (должен содержать `user_id`)
-  - Маршрут: `/api/tasks/{id}/vote`
+  - Аутентификация: JWT (должен содержать `user_id` и `taskId`)
+  - Маршрут: `/api/tasks/vote`
   - Валидация: 
     - Задача должна принадлежать пользователю
     - Задача должна быть завершена (`status = 'completed'`)
   - Логика: обновить рейтинг задачи (upvote/downvote, повторное нажатие убирает рейтинг)
   - Ответ: текущий рейтинг задачи и статус операции
-- [x] Добавить маршрут `/api/tasks/{id}/vote` в `cmd/server/main.go`
+- [x] Добавить маршрут `/api/tasks/vote` в `cmd/server/main.go`
 
 ### 4.2 Внутренний эндпоинт для статистики рейтингов
 - [x] **Файл**: `internal/api/handlers/internal.go`
@@ -144,8 +144,8 @@ function createVotingButtons(task) {
 
 ### 6.1 Новые эндпоинты в API.md
 - [x] **Файл**: `API.md`
-- [x] Добавить документацию для `/api/tasks/{id}/vote`:
-  - JWT должен содержать `user_id`.
+- [x] Добавить документацию для `/api/tasks/vote`:
+  - JWT должен содержать `user_id` и `taskId`.
   - Тело запроса: `{ "vote_type": "upvote|downvote|"" }`
   - Ответ: `{ "success": true, "rating": "upvote" }`
 - [x] Добавить документацию для `/api/internal/rating-stats`
@@ -234,7 +234,7 @@ func TestVoteTask_RemoveRating(t *testing.T)
 
 ### ✅ Полностью реализовано (готово к продакшену):
 1. **База данных**: миграция 0002_add_task_rating.sql, модели с полем UserRating
-2. **API эндпоинты**: POST /api/tasks/{id}/vote, GET /api/internal/rating-stats, GET /api/internal/rating-analytics
+2. **API эндпоинты**: POST /api/tasks/vote, GET /api/internal/rating-stats, GET /api/internal/rating-analytics
 3. **UI компоненты**: кнопки голосования в админ панели и пользовательском интерфейсе
 4. **Аналитика**: дашборд рейтингов с карточками метрик, графиками по времени, списком последних оценок
 5. **Базовая статистика**: секция с общей и пользовательской статистикой рейтингов в админ панели
