@@ -124,6 +124,9 @@ func (h *SSEHandlers) ResultPolling(w http.ResponseWriter, r *http.Request) {
 	// Запуск heartbeat в отдельной goroutine
 	go h.sendHeartbeats(client, heartbeatInterval, maxDuration, taskDone)
 
+	// Запуск keepalive в отдельной goroutine
+	go h.keepAlive(client, r, taskDone)
+
 	// Запуск клиента (блокирующий)
 	client.Run()
 }
@@ -334,6 +337,36 @@ func (h *SSEHandlers) sendHeartbeats(client *sse.Client, interval, maxDuration i
 	}
 }
 
+// keepAlive отправляет SSE комментарии для поддержания соединения
+func (h *SSEHandlers) keepAlive(client *sse.Client, r *http.Request, taskDone chan bool) {
+	ticker := time.NewTicker(25 * time.Second)
+	defer ticker.Stop()
+
+	// Получаем flusher из клиента
+	flusher := client.Flusher
+
+	for {
+		select {
+		case <-ticker.C:
+			// Отправляем SSE комментарий для keepalive
+			fmt.Fprintf(client.Writer, ": ping\n\n")
+			flusher.Flush()
+
+		case <-taskDone:
+			// Задача завершена, прекращаем keepalive
+			return
+
+		case <-r.Context().Done():
+			// Контекст запроса отменен
+			return
+
+		case <-client.Done:
+			// Клиент закрыт
+			return
+		}
+	}
+}
+
 func (h *SSEHandlers) sendImmediateResult(w http.ResponseWriter, task *database.Task) {
 	sse.WriteSSEHeaders(w)
 	w.WriteHeader(http.StatusOK)
@@ -476,6 +509,9 @@ func (h *SSEHandlers) TaskStream(w http.ResponseWriter, r *http.Request) {
 	// Запуск heartbeat для процессора
 	go h.sendProcessorHeartbeats(client, processorID, heartbeat, maxDuration)
 
+	// Запуск keepalive для процессора
+	go h.keepAliveProcessor(client, r)
+
 	// Запуск клиента
 	client.Run()
 }
@@ -551,6 +587,32 @@ func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID st
 			}
 
 		case <-client.Done:
+			return
+		}
+	}
+}
+
+// keepAliveProcessor отправляет SSE комментарии для поддержания соединения процессора
+func (h *SSEHandlers) keepAliveProcessor(client *sse.Client, r *http.Request) {
+	ticker := time.NewTicker(25 * time.Second)
+	defer ticker.Stop()
+
+	// Получаем flusher из клиента
+	flusher := client.Flusher
+
+	for {
+		select {
+		case <-ticker.C:
+			// Отправляем SSE комментарий для keepalive
+			fmt.Fprintf(client.Writer, ": ping\n\n")
+			flusher.Flush()
+
+		case <-r.Context().Done():
+			// Контекст запроса отменен
+			return
+
+		case <-client.Done:
+			// Клиент закрыт
 			return
 		}
 	}
