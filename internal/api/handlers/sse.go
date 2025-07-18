@@ -552,7 +552,14 @@ func (h *SSEHandlers) checkPendingTasks(client *sse.Client) {
 
 func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID string, interval, maxDuration int) {
 	startTime := time.Now()
-	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
+
+	// Уменьшаем интервал heartbeat для nginx
+	actualInterval := interval
+	if actualInterval > 30000 {
+		actualInterval = 30000 // Максимум 30 секунд
+	}
+
+	ticker := time.NewTicker(time.Duration(actualInterval) * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
@@ -582,6 +589,7 @@ func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID st
 				Data: map[string]interface{}{
 					"processorId": processorID,
 					"uptime":      time.Since(startTime).Milliseconds(),
+					"timestamp":   time.Now().Unix(),
 				},
 				Timestamp: time.Now().UnixMilli(),
 			}:
@@ -602,7 +610,7 @@ func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID st
 
 // keepAliveProcessor отправляет SSE комментарии для поддержания соединения процессора
 func (h *SSEHandlers) keepAliveProcessor(client *sse.Client, r *http.Request) {
-	ticker := time.NewTicker(25 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 
 	// Получаем flusher из клиента
@@ -611,8 +619,8 @@ func (h *SSEHandlers) keepAliveProcessor(client *sse.Client, r *http.Request) {
 	for {
 		select {
 		case <-ticker.C:
-			// Отправляем SSE комментарий для keepalive
-			fmt.Fprintf(client.Writer, ": ping\n\n")
+			// Отправляем SSE комментарий для keepalive с timestamp
+			fmt.Fprintf(client.Writer, ": keepalive %d\n\n", time.Now().Unix())
 			if flusher != nil {
 				flusher.Flush()
 			}
