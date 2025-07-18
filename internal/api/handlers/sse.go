@@ -109,7 +109,7 @@ func (h *SSEHandlers) ResultPolling(w http.ResponseWriter, r *http.Request) {
 	client.Events <- sse.SSEEvent{
 		Type: sse.EventHeartbeat,
 		Data: map[string]interface{}{
-			"message": "Connected to task polling",
+			"message": "Connected",
 			"taskId":  taskID,
 		},
 		Timestamp: time.Now().UnixMilli(),
@@ -217,7 +217,7 @@ func (h *SSEHandlers) pollTask(client *sse.Client, taskID, userID string, pollIn
 						case client.Events <- sse.SSEEvent{
 							Type: sse.EventHeartbeat,
 							Data: map[string]interface{}{
-								"message": "Final heartbeat before close",
+								"message": "Close",
 								"taskId":  taskID,
 							},
 							Timestamp: time.Now().UnixMilli(),
@@ -258,7 +258,7 @@ func (h *SSEHandlers) pollTask(client *sse.Client, taskID, userID string, pollIn
 						case client.Events <- sse.SSEEvent{
 							Type: sse.EventHeartbeat,
 							Data: map[string]interface{}{
-								"message": "Final heartbeat before close",
+								"message": "Close",
 								"taskId":  taskID,
 							},
 							Timestamp: time.Now().UnixMilli(),
@@ -471,10 +471,10 @@ func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID st
 			case client.Events <- sse.SSEEvent{
 				Type: sse.EventHeartbeat,
 				Data: map[string]interface{}{
-					"processorId": processorID,
-					"uptime":      time.Since(startTime).Milliseconds(),
-					"timestamp":   time.Now().Unix(),
-					"interval":    actualInterval,
+					// "processorId": processorID,
+					"uptime": time.Since(startTime).Milliseconds(),
+					// "timestamp":   time.Now().Unix(),
+					// "interval":    actualInterval,
 				},
 				Timestamp: time.Now().UnixMilli(),
 			}:
@@ -549,12 +549,12 @@ func (h *SSEHandlers) TaskStream(w http.ResponseWriter, r *http.Request) {
 	h.manager.AddClient(client)
 
 	// Логируем начало соединения
-	fmt.Printf("SSE connection started for processor %s at %s (heartbeat: %dms)\n", processorID, time.Now().Format(time.RFC3339), heartbeat)
+	// fmt.Printf("SSE connection started for processor %s at %s (heartbeat: %dms)\n", processorID, time.Now().Format(time.RFC3339), heartbeat)
 
 	// Следим за разрывом соединения
 	go func() {
 		<-r.Context().Done()
-		fmt.Printf("SSE connection context cancelled for processor %s at %s\n", processorID, time.Now().Format(time.RFC3339))
+		// fmt.Printf("SSE connection context cancelled for processor %s at %s\n", processorID, time.Now().Format(time.RFC3339))
 		client.Close()
 	}()
 
@@ -562,10 +562,10 @@ func (h *SSEHandlers) TaskStream(w http.ResponseWriter, r *http.Request) {
 	client.Events <- sse.SSEEvent{
 		Type: sse.EventHeartbeat,
 		Data: map[string]interface{}{
-			"message":        "Connected to task stream",
-			"processorId":    processorID,
-			"reconnectDelay": 5000,
-			"heartbeatMs":    heartbeat,
+			"message": "Connected",
+			// "processorId":    processorID,
+			// "reconnectDelay": 5000,
+			// "heartbeatMs":    heartbeat,
 		},
 		Timestamp: time.Now().UnixMilli(),
 	}
