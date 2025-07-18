@@ -514,7 +514,7 @@ func (h *SSEHandlers) TaskStream(w http.ResponseWriter, r *http.Request) {
 	go h.sendProcessorHeartbeats(client, processorID, heartbeat, maxDuration)
 
 	// Запуск keepalive для процессора
-	go h.keepAliveProcessor(client, r)
+	// go h.keepAliveProcessor(client, r)
 
 	// Запуск клиента
 	client.Run()
@@ -550,16 +550,63 @@ func (h *SSEHandlers) checkPendingTasks(client *sse.Client) {
 	}
 }
 
+// func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID string, interval, maxDuration int) {
+// 	startTime := time.Now()
+
+// 	// Уменьшаем интервал heartbeat для nginx
+// 	actualInterval := interval
+// 	if actualInterval > 30000 {
+// 		actualInterval = 30000 // Максимум 30 секунд
+// 	}
+
+// 	ticker := time.NewTicker(time.Duration(actualInterval) * time.Millisecond)
+// 	defer ticker.Stop()
+
+// 	for {
+// 		select {
+// 		case <-ticker.C:
+// 			if time.Since(startTime) > time.Duration(maxDuration)*time.Millisecond {
+// 				select {
+// 				case client.Events <- sse.SSEEvent{
+// 					Type: sse.EventError,
+// 					Data: map[string]interface{}{
+// 						"error":       "Connection timeout exceeded",
+// 						"maxDuration": maxDuration,
+// 						"processorId": processorID,
+// 					},
+// 					Timestamp: time.Now().UnixMilli(),
+// 				}:
+// 					// успешно отправили
+// 				default:
+// 					// канал закрыт, не отправляем
+// 				}
+// 				return
+// 			}
+
+// 			select {
+// 			case client.Events <- sse.SSEEvent{
+// 				Type: sse.EventHeartbeat,
+// 				Data: map[string]interface{}{
+// 					"processorId": processorID,
+// 					"uptime":      time.Since(startTime).Milliseconds(),
+// 					"timestamp":   time.Now().Unix(),
+// 				},
+// 				Timestamp: time.Now().UnixMilli(),
+// 			}:
+// 				// успешно отправили
+// 			default:
+// 				// канал закрыт, не отправляем
+// 			}
+
+// 		case <-client.Done:
+// 			return
+// 		}
+// 	}
+// }
+
 func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID string, interval, maxDuration int) {
 	startTime := time.Now()
-
-	// Уменьшаем интервал heartbeat для nginx
-	actualInterval := interval
-	if actualInterval > 30000 {
-		actualInterval = 30000 // Максимум 30 секунд
-	}
-
-	ticker := time.NewTicker(time.Duration(actualInterval) * time.Millisecond)
+	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
@@ -576,9 +623,7 @@ func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID st
 					},
 					Timestamp: time.Now().UnixMilli(),
 				}:
-					// успешно отправили
 				default:
-					// канал закрыт, не отправляем
 				}
 				return
 			}
@@ -590,16 +635,11 @@ func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID st
 					"processorId": processorID,
 					"uptime":      time.Since(startTime).Milliseconds(),
 					"timestamp":   time.Now().Unix(),
+					"interval":    interval,
 				},
 				Timestamp: time.Now().UnixMilli(),
 			}:
-				// успешно отправили
-				// Принудительно сбрасываем буфер после каждого heartbeat
-				if client.Flusher != nil {
-					client.Flusher.Flush()
-				}
 			default:
-				// канал закрыт, не отправляем
 			}
 
 		case <-client.Done:
@@ -610,19 +650,26 @@ func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID st
 
 // keepAliveProcessor отправляет SSE комментарии для поддержания соединения процессора
 func (h *SSEHandlers) keepAliveProcessor(client *sse.Client, r *http.Request) {
-	ticker := time.NewTicker(15 * time.Second)
+	// Увеличиваем интервал keepalive, чтобы не конфликтовать с heartbeat
+	ticker := time.NewTicker(45 * time.Second)
 	defer ticker.Stop()
-
-	// Получаем flusher из клиента
-	flusher := client.Flusher
 
 	for {
 		select {
 		case <-ticker.C:
-			// Отправляем SSE комментарий для keepalive с timestamp
-			fmt.Fprintf(client.Writer, ": keepalive %d\n\n", time.Now().Unix())
-			if flusher != nil {
-				flusher.Flush()
+			// Используем только heartbeat событие вместо SSE комментария
+			select {
+			case client.Events <- sse.SSEEvent{
+				Type: sse.EventHeartbeat,
+				Data: map[string]interface{}{
+					"message":   "keepalive",
+					"timestamp": time.Now().Unix(),
+				},
+				Timestamp: time.Now().UnixMilli(),
+			}:
+				// успешно отправили
+			default:
+				// канал закрыт, не отправляем
 			}
 
 		case <-r.Context().Done():
