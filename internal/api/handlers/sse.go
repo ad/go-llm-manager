@@ -486,9 +486,13 @@ func (h *SSEHandlers) TaskStream(w http.ResponseWriter, r *http.Request) {
 
 	h.manager.AddClient(client)
 
+	// Логируем начало соединения
+	fmt.Printf("SSE connection started for processor %s at %s\n", processorID, time.Now().Format(time.RFC3339))
+
 	// Следим за разрывом соединения
 	go func() {
 		<-r.Context().Done()
+		fmt.Printf("SSE connection context cancelled for processor %s at %s\n", processorID, time.Now().Format(time.RFC3339))
 		client.Close()
 	}()
 
@@ -582,6 +586,10 @@ func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID st
 				Timestamp: time.Now().UnixMilli(),
 			}:
 				// успешно отправили
+				// Принудительно сбрасываем буфер после каждого heartbeat
+				if client.Flusher != nil {
+					client.Flusher.Flush()
+				}
 			default:
 				// канал закрыт, не отправляем
 			}
@@ -605,7 +613,9 @@ func (h *SSEHandlers) keepAliveProcessor(client *sse.Client, r *http.Request) {
 		case <-ticker.C:
 			// Отправляем SSE комментарий для keepalive
 			fmt.Fprintf(client.Writer, ": ping\n\n")
-			flusher.Flush()
+			if flusher != nil {
+				flusher.Flush()
+			}
 
 		case <-r.Context().Done():
 			// Контекст запроса отменен
