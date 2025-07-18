@@ -124,9 +124,6 @@ func (h *SSEHandlers) ResultPolling(w http.ResponseWriter, r *http.Request) {
 	// Запуск heartbeat в отдельной goroutine
 	go h.sendHeartbeats(client, heartbeatInterval, maxDuration, taskDone)
 
-	// Запуск keepalive в отдельной goroutine
-	go h.keepAlive(client, r, taskDone)
-
 	// Запуск клиента (блокирующий)
 	client.Run()
 }
@@ -337,36 +334,6 @@ func (h *SSEHandlers) sendHeartbeats(client *sse.Client, interval, maxDuration i
 	}
 }
 
-// keepAlive отправляет SSE комментарии для поддержания соединения
-func (h *SSEHandlers) keepAlive(client *sse.Client, r *http.Request, taskDone chan bool) {
-	ticker := time.NewTicker(25 * time.Second)
-	defer ticker.Stop()
-
-	// Получаем flusher из клиента
-	flusher := client.Flusher
-
-	for {
-		select {
-		case <-ticker.C:
-			// Отправляем SSE комментарий для keepalive
-			fmt.Fprintf(client.Writer, ": ping\n\n")
-			flusher.Flush()
-
-		case <-taskDone:
-			// Задача завершена, прекращаем keepalive
-			return
-
-		case <-r.Context().Done():
-			// Контекст запроса отменен
-			return
-
-		case <-client.Done:
-			// Клиент закрыт
-			return
-		}
-	}
-}
-
 func (h *SSEHandlers) sendImmediateResult(w http.ResponseWriter, task *database.Task) {
 	sse.WriteSSEHeaders(w)
 	w.WriteHeader(http.StatusOK)
@@ -439,87 +406,6 @@ func formatTimePtr(t *int64) interface{} {
 	return time.Unix(0, *t*int64(time.Millisecond)).Format(time.RFC3339)
 }
 
-// GET /api/internal/task-stream - SSE для процессоров
-func (h *SSEHandlers) TaskStream(w http.ResponseWriter, r *http.Request) {
-	// log.Printf("Received SSE request for task stream: %s", r.URL.String())
-
-	if r.Method != http.MethodGet {
-		utils.SendError(w, http.StatusMethodNotAllowed, "Method not allowed. Use GET for SSE.")
-		return
-	}
-
-	// Поддержка авторизации через Authorization header ИЛИ token в query
-	var token string
-	authHeader := r.Header.Get("Authorization")
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		token = strings.TrimPrefix(authHeader, "Bearer ")
-	} else {
-		token = r.URL.Query().Get("token")
-	}
-
-	if token == "" {
-		utils.SendError(w, http.StatusUnauthorized, "Missing or invalid Authorization header")
-		return
-	}
-
-	processorID := r.URL.Query().Get("processor_id")
-	if processorID == "" {
-		utils.SendError(w, http.StatusBadRequest, "Missing processor_id parameter")
-		return
-	}
-
-	// Парсинг опций
-	heartbeat := h.parseIntParam(r.URL.Query().Get("heartbeat"), 30000, 15000, 60000)
-	maxDuration := h.parseIntParam(r.URL.Query().Get("maxDuration"), 3600000, 60000, 7200000)
-
-	// Настройка SSE headers
-	sse.WriteSSEHeaders(w)
-	w.WriteHeader(http.StatusOK)
-
-	// Создание SSE клиента
-	clientID := uuid.New().String()
-	client := sse.NewClient(clientID, processorID, "", w, func(id string) { h.manager.RemoveClient(id) })
-	if client == nil {
-		utils.SendError(w, http.StatusInternalServerError, "Failed to create SSE client")
-		return
-	}
-
-	h.manager.AddClient(client)
-
-	// Логируем начало соединения
-	fmt.Printf("SSE connection started for processor %s at %s\n", processorID, time.Now().Format(time.RFC3339))
-
-	// Следим за разрывом соединения
-	go func() {
-		<-r.Context().Done()
-		fmt.Printf("SSE connection context cancelled for processor %s at %s\n", processorID, time.Now().Format(time.RFC3339))
-		client.Close()
-	}()
-
-	// Отправка начального соединения
-	client.Events <- sse.SSEEvent{
-		Type: sse.EventHeartbeat,
-		Data: map[string]interface{}{
-			"message":        "Connected to task stream",
-			"processorId":    processorID,
-			"reconnectDelay": 5000,
-		},
-		Timestamp: time.Now().UnixMilli(),
-	}
-
-	// Проверка существующих pending задач
-	go h.checkPendingTasks(client)
-
-	// Запуск heartbeat для процессора
-	go h.sendProcessorHeartbeats(client, processorID, heartbeat, maxDuration)
-
-	// Запуск keepalive для процессора
-	// go h.keepAliveProcessor(client, r)
-
-	// Запуск клиента
-	client.Run()
-}
-
 func (h *SSEHandlers) checkPendingTasks(client *sse.Client) {
 	tasks, err := h.db.GetPendingTasks(10)
 	if err != nil {
@@ -550,63 +436,16 @@ func (h *SSEHandlers) checkPendingTasks(client *sse.Client) {
 	}
 }
 
-// func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID string, interval, maxDuration int) {
-// 	startTime := time.Now()
-
-// 	// Уменьшаем интервал heartbeat для nginx
-// 	actualInterval := interval
-// 	if actualInterval > 30000 {
-// 		actualInterval = 30000 // Максимум 30 секунд
-// 	}
-
-// 	ticker := time.NewTicker(time.Duration(actualInterval) * time.Millisecond)
-// 	defer ticker.Stop()
-
-// 	for {
-// 		select {
-// 		case <-ticker.C:
-// 			if time.Since(startTime) > time.Duration(maxDuration)*time.Millisecond {
-// 				select {
-// 				case client.Events <- sse.SSEEvent{
-// 					Type: sse.EventError,
-// 					Data: map[string]interface{}{
-// 						"error":       "Connection timeout exceeded",
-// 						"maxDuration": maxDuration,
-// 						"processorId": processorID,
-// 					},
-// 					Timestamp: time.Now().UnixMilli(),
-// 				}:
-// 					// успешно отправили
-// 				default:
-// 					// канал закрыт, не отправляем
-// 				}
-// 				return
-// 			}
-
-// 			select {
-// 			case client.Events <- sse.SSEEvent{
-// 				Type: sse.EventHeartbeat,
-// 				Data: map[string]interface{}{
-// 					"processorId": processorID,
-// 					"uptime":      time.Since(startTime).Milliseconds(),
-// 					"timestamp":   time.Now().Unix(),
-// 				},
-// 				Timestamp: time.Now().UnixMilli(),
-// 			}:
-// 				// успешно отправили
-// 			default:
-// 				// канал закрыт, не отправляем
-// 			}
-
-// 		case <-client.Done:
-// 			return
-// 		}
-// 	}
-// }
-
 func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID string, interval, maxDuration int) {
 	startTime := time.Now()
-	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
+
+	// Уменьшаем интервал для лучшей совместимости с proxy
+	actualInterval := interval
+	if actualInterval > 30000 {
+		actualInterval = 30000 // Максимум 20 секунд
+	}
+
+	ticker := time.NewTicker(time.Duration(actualInterval) * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
@@ -635,10 +474,14 @@ func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID st
 					"processorId": processorID,
 					"uptime":      time.Since(startTime).Milliseconds(),
 					"timestamp":   time.Now().Unix(),
-					"interval":    interval,
+					"interval":    actualInterval,
 				},
 				Timestamp: time.Now().UnixMilli(),
 			}:
+				// Принудительно сбрасываем буфер после отправки
+				if client.Flusher != nil {
+					client.Flusher.Flush()
+				}
 			default:
 			}
 
@@ -648,39 +491,93 @@ func (h *SSEHandlers) sendProcessorHeartbeats(client *sse.Client, processorID st
 	}
 }
 
-// keepAliveProcessor отправляет SSE комментарии для поддержания соединения процессора
-func (h *SSEHandlers) keepAliveProcessor(client *sse.Client, r *http.Request) {
-	// Увеличиваем интервал keepalive, чтобы не конфликтовать с heartbeat
-	ticker := time.NewTicker(45 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// Используем только heartbeat событие вместо SSE комментария
-			select {
-			case client.Events <- sse.SSEEvent{
-				Type: sse.EventHeartbeat,
-				Data: map[string]interface{}{
-					"message":   "keepalive",
-					"timestamp": time.Now().Unix(),
-				},
-				Timestamp: time.Now().UnixMilli(),
-			}:
-				// успешно отправили
-			default:
-				// канал закрыт, не отправляем
-			}
-
-		case <-r.Context().Done():
-			// Контекст запроса отменен
-			return
-
-		case <-client.Done:
-			// Клиент закрыт
-			return
-		}
+// GET /api/internal/task-stream - SSE для процессоров
+func (h *SSEHandlers) TaskStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		utils.SendError(w, http.StatusMethodNotAllowed, "Method not allowed. Use GET for SSE.")
+		return
 	}
+
+	// Поддержка авторизации через Authorization header ИЛИ token в query
+	var token string
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token = strings.TrimPrefix(authHeader, "Bearer ")
+	} else {
+		token = r.URL.Query().Get("token")
+	}
+
+	if token == "" {
+		utils.SendError(w, http.StatusUnauthorized, "Missing or invalid Authorization header")
+		return
+	}
+
+	processorID := r.URL.Query().Get("processor_id")
+	if processorID == "" {
+		utils.SendError(w, http.StatusBadRequest, "Missing processor_id parameter")
+		return
+	}
+
+	// Парсинг опций - делаем heartbeat более частым
+	heartbeat := h.parseIntParam(r.URL.Query().Get("heartbeat"), 15000, 5000, 20000)
+	maxDuration := h.parseIntParam(r.URL.Query().Get("maxDuration"), 3600000, 60000, 7200000)
+
+	// Настройка SSE headers с дополнительными заголовками для proxy
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+	// Дополнительные заголовки для предотвращения буферизации
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	w.WriteHeader(http.StatusOK)
+
+	// Создание SSE клиента
+	clientID := uuid.New().String()
+	client := sse.NewClient(clientID, processorID, "", w, func(id string) { h.manager.RemoveClient(id) })
+	if client == nil {
+		utils.SendError(w, http.StatusInternalServerError, "Failed to create SSE client")
+		return
+	}
+
+	h.manager.AddClient(client)
+
+	// Логируем начало соединения
+	fmt.Printf("SSE connection started for processor %s at %s (heartbeat: %dms)\n", processorID, time.Now().Format(time.RFC3339), heartbeat)
+
+	// Следим за разрывом соединения
+	go func() {
+		<-r.Context().Done()
+		fmt.Printf("SSE connection context cancelled for processor %s at %s\n", processorID, time.Now().Format(time.RFC3339))
+		client.Close()
+	}()
+
+	// Отправка начального соединения
+	client.Events <- sse.SSEEvent{
+		Type: sse.EventHeartbeat,
+		Data: map[string]interface{}{
+			"message":        "Connected to task stream",
+			"processorId":    processorID,
+			"reconnectDelay": 5000,
+			"heartbeatMs":    heartbeat,
+		},
+		Timestamp: time.Now().UnixMilli(),
+	}
+
+	// Проверка существующих pending задач
+	go h.checkPendingTasks(client)
+
+	// Запуск heartbeat для процессора
+	go h.sendProcessorHeartbeats(client, processorID, heartbeat, maxDuration)
+
+	// Запуск клиента (блокирующий)
+	client.Run()
 }
 
 // Экспортируем менеджер для интеграции с public.go

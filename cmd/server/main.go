@@ -259,9 +259,11 @@ func main() {
 		Addr:    addr,
 		Handler: mux,
 		// Security timeouts
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		ReadTimeout:       0,
+		WriteTimeout:      0,
+		IdleTimeout:       300 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MB
 	}
 
 	// Start server in goroutine
